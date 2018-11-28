@@ -1,0 +1,33 @@
+---
+title: "bayesParcel R/Stan analyses"
+author: "The Best Group Ever (Paul, Yaniv, Monica)"
+date: "11/28/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(magrittr)
+library(tidyverse)
+library(rstan)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+```
+
+## Loading real data
+
+Under construction because Paul hasn't uploaded the data yet.
+
+## Simulating data
+
+## Model 0: Single normal hyper-distribution
+
+### Stan code
+
+### Plots?
+
+## Model 1: Finite mixture hyper-distribution
+
+### Stan code
+
+### Plots?
