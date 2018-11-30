@@ -18,13 +18,137 @@ rstan_options(auto_write = TRUE)
 
 Under construction because Paul hasn't uploaded the data yet.
 
+```{r}
+betas_raw <- read_csv("../../ignore/harvard_ox_roi.csv")
+
+betas <- betas_raw %>%
+  gather(key = "roi", value = "value", -Subject, -wave, -meanFD_included_trs) %>%
+  filter(!is.na(value)) %>%
+  mutate(statistic = if_else(grepl("Mean", roi), "cope_mean", "cope_sd"),
+         roi = if_else(statistic == "cope_mean",
+                       str_sub(roi, end = -5L),
+                       str_sub(roi, end = -3L))) %>%
+  spread(statistic, value) %>%
+  # BAND AID!!! but we need ot filter cope_sd > 0. some shit failed
+  filter(cope_sd > 0, wave == 1) %>%
+  group_by(Subject) %>%
+  nest() %>%
+  mutate(subject_num = 1:n()) %>%
+  unnest() %>%
+  group_by(roi) %>%
+  nest() %>%
+  mutate(roi_num = 1:n()) %>%
+  unnest() %>%
+  mutate(cope_mean_scaled = cope_mean / sd(cope_mean),
+         cope_sd_scaled = cope_sd / sd(cope_mean))
+```
+
+ROIs to exclude*:
+
+subcortical 1, 2, 8 (brainstem), 12, 13
+
 ## Simulating data
 
 ## Model 0: Single normal hyper-distribution
 
 ### Stan code
 
+```{stan, output.var = "model0", results = "hide", message = FALSE, warning = FALSE}
+data {
+  int<lower=0> N;          // number of rois x observations (subjs x waves)
+  int<lower=0> N_roi;
+  int<lower=0> N_subj;
+  real cope[N];               // estimated effects for each observation of roi
+  int<lower=1, upper=N_roi> roi[N]; // ROI ID of each observation
+  int<lower=1, upper=N_subj> subj[N]; // subject ID of each observation
+  real<lower=0> fd[N]; // framewise displacement of each observation, varies by subject x wave
+  real<lower=0> varcope[N];  // s.e. of effect estimates
+}
+transformed data {
+  int<lower=0> N_cell = N_roi * N_subj;
+}
+parameters {
+  real alpha; // intercept 
+  real<lower=0> tau_roi;
+  real<lower=0> tau_subj;
+  vector[N_roi] eta_roi; // centered parameterization of roi-specific effect estimate
+  vector[N_subj] eta_subj; // centered parameterization of roi-specific effect estimate
+}
+model {
+  // priors make the world go round
+  alpha ~ normal(0, 1);
+  tau_roi ~ normal(0, 1);
+  tau_subj ~ normal(0, 1);
+  eta_roi ~ normal(0, 1);
+  eta_subj ~ normal(0, 1);
+  // completely pooled across observations here
+  cope ~ normal(alpha + tau_roi * eta_roi[roi] + tau_subj * eta_subj[subj], varcope);
+}
+generated quantities {
+  vector[N_roi] theta_roi = alpha + tau_roi * eta_roi;
+  vector[N_subj] theta_subj = alpha + tau_subj * eta_subj;
+}
+```
+
+```{r}
+fit <- sampling(model0,
+                data = betas %$%
+                  list(N = nrow(.),
+                       N_roi = max(roi_num),
+                       N_subj = max(subject_num),
+                       cope = cope_mean_scaled,
+                       roi = roi_num,
+                       subj = subject_num,
+                       fd = meanFD_included_trs,
+                       varcope = cope_sd_scaled))
+```
+
+```{r}
+df_fit <- fit %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  mutate(iteration = 1:n())
+
+hyperparams <- df_fit %>%
+  select(iteration, alpha, tau_roi, tau_subj)
+
+eta_rois <- df_fit %>%
+  select(iteration, starts_with("eta_roi")) %>%
+  gather(key = "roi_num", value = "eta", -iteration) %>%
+  mutate(roi_num = as.integer(str_sub(roi_num, start = 9L, end = -2L)),
+         eta_unscaled = eta * sd(betas$cope_mean)) %>%
+  group_by(roi_num) %>%
+  nest(.key = "iterations") %>%
+  left_join(betas %>%
+              select(roi_num, cope_mean, cope_mean_scaled) %>%
+              group_by(roi_num) %>%
+              summarize_all(mean),
+            by = "roi_num") %>%
+  mutate(summaries = map(iterations, ~.x %>%
+                           summarize_at(vars(starts_with("eta")),
+                                        funs(median = median,
+                                             int_95_lower = quantile(., .025),
+                                             int_95_upper = quantile(., .975),
+                                             int_50_lower = quantile(., .25),
+                                             int_50_upper = quantile(., .75))))) %>%
+  unnest(summaries, .preserve = "iterations")
+```
+
 ### Plots?
+
+```{r}
+eta_rois %>%
+  ggplot(aes(x = roi_num)) +
+  geom_hline(yintercept = 0, linetype = 3) +
+  geom_errorbar(aes(ymin = eta_unscaled_int_95_lower, ymax = eta_unscaled_int_95_upper), width = 0) +
+  geom_point(aes(y = eta_unscaled_median)) +
+  geom_point(aes(y = cope_mean), color = "hotpink") +
+  labs(x = "ROI number (arbitrary)",
+       y = "COPE/beta value (arbitrary units)",
+       title = "Posterior predictive check: ROI-specific etas don't look great",
+       subtitle = "Black: median estimates +- 95% predictive interval, pink: original mean estimate") +
+  theme_bw()
+```
 
 ## Model 1: Finite mixture hyper-distribution
 
