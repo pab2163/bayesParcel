@@ -113,10 +113,10 @@ hyperparams <- df_fit %>%
   select(iteration, alpha, tau_roi, tau_subj)
 
 eta_rois <- df_fit %>%
-  select(iteration, starts_with("eta_roi")) %>%
-  gather(key = "roi_num", value = "eta", -iteration) %>%
+  select(iteration, tau_roi, starts_with("eta_roi")) %>%
+  gather(key = "roi_num", value = "eta", starts_with("eta_roi")) %>%
   mutate(roi_num = as.integer(str_sub(roi_num, start = 9L, end = -2L)),
-         eta_unscaled = eta * sd(betas$cope_mean)) %>%
+         eta_unscaled = tau_roi * eta * sd(betas$cope_mean)) %>%
   group_by(roi_num) %>%
   nest(.key = "iterations") %>%
   left_join(betas %>%
@@ -126,6 +126,27 @@ eta_rois <- df_fit %>%
             by = "roi_num") %>%
   mutate(summaries = map(iterations, ~.x %>%
                            summarize_at(vars(starts_with("eta")),
+                                        funs(median = median,
+                                             int_95_lower = quantile(., .025),
+                                             int_95_upper = quantile(., .975),
+                                             int_50_lower = quantile(., .25),
+                                             int_50_upper = quantile(., .75))))) %>%
+  unnest(summaries, .preserve = "iterations")
+
+theta_rois <- df_fit %>%
+  select(iteration, starts_with("theta_roi")) %>%
+  gather(key = "roi_num", value = "theta", starts_with("theta_roi")) %>%
+  mutate(roi_num = as.integer(str_sub(roi_num, start = 11L, end = -2L)),
+         theta_unscaled = theta * sd(betas$cope_mean)) %>%
+  group_by(roi_num) %>%
+  nest(.key = "iterations") %>%
+  left_join(betas %>%
+              select(roi_num, cope_mean, cope_mean_scaled) %>%
+              group_by(roi_num) %>%
+              summarize_all(mean),
+            by = "roi_num") %>%
+  mutate(summaries = map(iterations, ~.x %>%
+                           summarize_at(vars(starts_with("theta")),
                                         funs(median = median,
                                              int_95_lower = quantile(., .025),
                                              int_95_upper = quantile(., .975),
@@ -150,6 +171,19 @@ eta_rois %>%
   theme_bw()
 ```
 
+```{r}
+theta_rois %>%
+  ggplot(aes(x = roi_num)) +
+  geom_hline(yintercept = 0, linetype = 3) +
+  geom_errorbar(aes(ymin = theta_unscaled_int_95_lower, ymax = theta_unscaled_int_95_upper), width = 0) +
+  geom_point(aes(y = theta_unscaled_median)) +
+  geom_point(aes(y = cope_mean), color = "hotpink") +
+  labs(x = "ROI number (arbitrary)",
+       y = "COPE/beta value (arbitrary units)",
+       title = "Posterior predictive check: ROI-specific thetas (from generated quantities)",
+       subtitle = "Black: median estimates +- 95% predictive interval, pink: original mean estimate") +
+  theme_bw()
+```
 ## Model 1: Finite mixture hyper-distribution
 
 ### Stan code
