@@ -218,7 +218,7 @@ ggplot(df_subs, aes(x = xplot, y = median)) +
   facet_wrap('subject_num') +
   theme(strip.background = element_blank(),
     strip.text.x = element_blank()) +
-  labs(x = 'subject number (arbitrary)',
+  labs(x = 'Subject number (arbitrary)',
        y = 'COPE',
        title = 'Posterior predictive checks: replicate plots by subject, for a random subsample of subjects',
        subtitle = 'Red: posterior median. Yellow: posterior 95% interval. Black: observed COPE')
@@ -233,7 +233,7 @@ ggplot(df_subs, aes(x = xplot, y = median)) +
   facet_wrap('roi_num') +
   theme(strip.background = element_blank(),
     strip.text.x = element_blank()) +
-  labs(x = 'Subject number (arbitrary)',
+  labs(x = 'ROI number (arbitrary)',
        y = 'COPE',
        title = 'Posterior predictive checks: replicate plots by ROI, for a random subsample of ROIs',
        subtitle = 'Red: posterior median. Yellow: posterior 95% interval. Black: observed COPE')
@@ -263,8 +263,8 @@ ggplot(eta_subj, aes(x = value)) +
   theme(strip.background = element_blank(),
     strip.text.x = element_blank()) + 
   labs(x = expression(eta),
-       title = 'Estimated ROI deviations agains the normal prior distribution',
-       subtitle = 'Black: ROI histogram, Blue: normal prior, Each facet represents a posterior draw')
+       title = 'Estimated subject deviations agains the normal prior distribution',
+       subtitle = 'Black: subject histogram, Blue: normal prior, Each facet represents a posterior draw')
 
 n_roi <- length(unique(eta_rois$variable))
 ggplot(eta_rois, aes(x = value)) + 
@@ -276,8 +276,8 @@ ggplot(eta_rois, aes(x = value)) +
   theme(strip.background = element_blank(),
     strip.text.x = element_blank()) + 
   labs(x = expression(eta),
-       title = 'Estimated subject deviations agains the normal prior distribution',
-       subtitle = 'Black: subject histogram, Blue: normal prior, Each facet represents a posterior draw')
+       title = 'Estimated ROI deviations agains the normal prior distribution',
+       subtitle = 'Black: ROI histogram, Blue: normal prior, Each facet represents a posterior draw')
 
 ```
 
