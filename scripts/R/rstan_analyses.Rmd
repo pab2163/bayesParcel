@@ -158,15 +158,15 @@ theta_rois <- df_fit %>%
 ### Plots?
 
 ```{r}
-eta_rois %>%
+theta_rois %>%
   ggplot(aes(x = roi_num)) +
   geom_hline(yintercept = 0, linetype = 3) +
-  geom_errorbar(aes(ymin = eta_unscaled_int_95_lower, ymax = eta_unscaled_int_95_upper), width = 0) +
-  geom_point(aes(y = eta_unscaled_median)) +
+  geom_errorbar(aes(ymin = theta_unscaled_int_95_lower, ymax = theta_unscaled_int_95_upper), width = 0) +
+  geom_point(aes(y = theta_unscaled_median)) +
   geom_point(aes(y = cope_mean), color = "hotpink") +
   labs(x = "ROI number (arbitrary)",
        y = "COPE/beta value (arbitrary units)",
-       title = "Posterior predictive check: ROI-specific etas don't look great",
+       title = "Bayesian estimates against original marginal means",
        subtitle = "Black: median estimates +- 95% predictive interval, pink: original mean estimate") +
   theme_bw()
 ```
