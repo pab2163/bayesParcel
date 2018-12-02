@@ -9,9 +9,11 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(magrittr)
 library(tidyverse)
+theme_set(theme_bw())
 library(rstan)
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
+library(data.table)
 ```
 
 ## Loading real data
@@ -87,10 +89,16 @@ model {
 generated quantities {
   vector[N_roi] theta_roi = alpha + tau_roi * eta_roi;
   vector[N_subj] theta_subj = alpha + tau_subj * eta_subj;
-  vector [N] rep_cope;
+  
+  vector [N] rep_cope; // Create data replicates
+  vector [N_subj] rep_theta_subj; // Create subject replicates. 
+  // Doesn't make sence to create ROI replicates, as sadly, there is no other brain.
   
   for (i in 1:N)
     rep_cope[i] = normal_rng(alpha + tau_roi * eta_roi[roi][i] + tau_subj * eta_subj[subj][i], varcope[i]);
+    
+  for (i in 1:N_subj)
+    rep_theta_subj = alpha + tau_subj * normal_rng(0, 1);
 }
 ```
 
@@ -175,20 +183,65 @@ theta_rois %>%
        subtitle = "Black: median estimates +- 95% predictive interval, pink: original mean estimate") +
   theme_bw()
 ```
-
 ```{r}
-theta_rois %>%
-  ggplot(aes(x = roi_num)) +
-  geom_hline(yintercept = 0, linetype = 3) +
-  geom_errorbar(aes(ymin = theta_unscaled_int_95_lower, ymax = theta_unscaled_int_95_upper), width = 0) +
-  geom_point(aes(y = theta_unscaled_median)) +
-  geom_point(aes(y = cope_mean), color = "hotpink") +
-  labs(x = "ROI number (arbitrary)",
-       y = "COPE/beta value (arbitrary units)",
-       title = "Posterior predictive check: ROI-specific thetas (from generated quantities)",
-       subtitle = "Black: median estimates +- 95% predictive interval, pink: original mean estimate") +
-  theme_bw()
+# Plot data replicates
+# Implemented with data.table. Sorry. Open to the possibility of recoding with tidyverse, just not right now
+df_fit <- as.data.table(fit0)
+df_fit <- df_fit[, grepl('rep_cope', colnames(df_fit)), with = F]
+df_fit[, sim := 1:nrow(df_fit)]
+df_fit <- melt(df_fit, id.vars = 'sim')
+df_fit[, value := value * sd(betas$cope_mean)]
+df_fit <- df_fit[, .(median = median(value),
+                     lb = quantile(value, 0.025),
+                     ub = quantile(value, 0.975)), by = variable][order(variable)]
+df_fit[, subject_num := betas$subject_num]
+df_fit[, roi_num := betas$roi_num]
+df_fit[, true_value := betas$cope_mean]
+df_fit <- df_fit[order(true_value)]
+
+# Plot disregarding heirarchy
+ggplot(df_fit, aes(x = 1:nrow(df_fit), y = median)) +
+  geom_ribbon(aes(ymin = lb, ymax = ub), fill = 'yellow') +
+  geom_line(color = 'darkred') + 
+  geom_point(aes(y = true_value)) +
+  labs(x = 'Observation number',
+       y = 'COPE',
+       title = 'Posterior predictive checks: replicate plots ignoring heirarchy',
+       subtitle = 'Red: posterior median. Yellow: posterior 95% interval. Black: observed COPE')
+
+# Plot by subject
+df_subs <- df_fit[subject_num %in% sample(1:length(unique(subject_num)), 20)]
+df_subs[, xplot := 1:.N, by = subject_num]
+ggplot(df_subs, aes(x = xplot, y = median)) +
+  geom_ribbon(aes(ymin = lb, ymax = ub), fill = 'yellow') +
+  geom_point(aes(y = true_value)) +
+  geom_line(color = 'darkred') + 
+  facet_wrap('subject_num') +
+  theme(strip.background = element_blank(),
+    strip.text.x = element_blank()) +
+  labs(x = 'ROI number (arbitrary)',
+       y = 'COPE',
+       title = 'Posterior predictive checks: replicate plots by subject, for a random subsample of subjects',
+       subtitle = 'Red: posterior median. Yellow: posterior 95% interval. Black: observed COPE')
+
+# Plot by roi
+df_subs <- df_fit[roi_num %in% sample(1:length(unique(roi_num)), 20)]
+df_subs[, xplot := 1:.N, by = roi_num]
+ggplot(df_subs, aes(x = xplot, y = median)) +
+  geom_ribbon(aes(ymin = lb, ymax = ub), fill = 'yellow') +
+  geom_point(aes(y = true_value)) +
+  geom_line(color = 'darkred') + 
+  facet_wrap('roi_num') +
+  theme(strip.background = element_blank(),
+    strip.text.x = element_blank()) +
+  labs(x = 'Subject number (arbitrary)',
+       y = 'COPE',
+       title = 'Posterior predictive checks: replicate plots by ROI, for a random subsample of ROIs',
+       subtitle = 'Red: posterior median. Yellow: posterior 95% interval. Black: observed COPE')
+
 ```
+
+
 ## Model 1: Finite mixture hyper-distribution
 
 ### Stan code
