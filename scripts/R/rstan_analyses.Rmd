@@ -91,9 +91,7 @@ generated quantities {
   vector[N_subj] theta_subj = alpha + tau_subj * eta_subj;
   
   vector [N] rep_cope; // Create data replicates
-  vector [N_subj] rep_theta_subj; // Create subject replicates. 
-  // Doesn't make sence to create ROI replicates, as sadly, there is no other brain.
-  
+
   for (i in 1:N)
     rep_cope[i] = normal_rng(alpha + tau_roi * eta_roi[roi][i] + tau_subj * eta_subj[subj][i], varcope[i]);
 }
@@ -237,6 +235,13 @@ ggplot(df_subs, aes(x = xplot, y = median)) +
        subtitle = 'Red: posterior median. Yellow: posterior 95% interval. Black: observed COPE')
 
 ```
+```{r}
+# Compare thetas to priors
+df_fit <- as.data.table(fit0)
+theta_rois <- df_fit[, grepl('theta_roi', colnames(df_fit)), with = F]
+theta_subj <- df_fit[, grepl('theta_roi', colnames(df_fit)), with = F]
+```
+
 
 ```{r}
 # Plot subject replicates
