@@ -96,9 +96,6 @@ generated quantities {
   
   for (i in 1:N)
     rep_cope[i] = normal_rng(alpha + tau_roi * eta_roi[roi][i] + tau_subj * eta_subj[subj][i], varcope[i]);
-    
-  for (i in 1:N_subj)
-    rep_theta_subj[i] = alpha + tau_subj * normal_rng(0, 1);
 }
 ```
 
