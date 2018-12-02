@@ -87,11 +87,15 @@ model {
 generated quantities {
   vector[N_roi] theta_roi = alpha + tau_roi * eta_roi;
   vector[N_subj] theta_subj = alpha + tau_subj * eta_subj;
+  vector [N] rep_cope;
+  
+  for (i in 1:N)
+    rep_cope[i] = normal_rng(alpha + tau_roi * eta_roi[roi][i] + tau_subj * eta_subj[subj][i], varcope[i]);
 }
 ```
 
 ```{r}
-fit <- sampling(model0,
+fit0 <- sampling(model0,
                 data = betas %$%
                   list(N = nrow(.),
                        N_roi = max(roi_num),
@@ -100,11 +104,12 @@ fit <- sampling(model0,
                        roi = roi_num,
                        subj = subject_num,
                        fd = meanFD_included_trs,
-                       varcope = cope_sd_scaled))
+                       varcope = cope_sd_scaled),
+                control = list(max_treedepth = 15))
 ```
 
 ```{r}
-df_fit <- fit %>%
+df_fit <- fit0 %>%
   as.data.frame() %>%
   as_tibble() %>%
   mutate(iteration = 1:n())
