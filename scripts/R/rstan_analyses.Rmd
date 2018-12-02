@@ -98,7 +98,7 @@ generated quantities {
     rep_cope[i] = normal_rng(alpha + tau_roi * eta_roi[roi][i] + tau_subj * eta_subj[subj][i], varcope[i]);
     
   for (i in 1:N_subj)
-    rep_theta_subj = alpha + tau_subj * normal_rng(0, 1);
+    rep_theta_subj[i] = alpha + tau_subj * normal_rng(0, 1);
 }
 ```
 
@@ -214,7 +214,7 @@ df_subs <- df_fit[subject_num %in% sample(1:length(unique(subject_num)), 20)]
 df_subs[, xplot := 1:.N, by = subject_num]
 ggplot(df_subs, aes(x = xplot, y = median)) +
   geom_ribbon(aes(ymin = lb, ymax = ub), fill = 'yellow') +
-  geom_point(aes(y = true_value)) +
+  geom_point(aes(y = true_value), size = 0.3) +
   geom_line(color = 'darkred') + 
   facet_wrap('subject_num') +
   theme(strip.background = element_blank(),
@@ -229,7 +229,7 @@ df_subs <- df_fit[roi_num %in% sample(1:length(unique(roi_num)), 20)]
 df_subs[, xplot := 1:.N, by = roi_num]
 ggplot(df_subs, aes(x = xplot, y = median)) +
   geom_ribbon(aes(ymin = lb, ymax = ub), fill = 'yellow') +
-  geom_point(aes(y = true_value)) +
+  geom_point(aes(y = true_value), size = 0.3) +
   geom_line(color = 'darkred') + 
   facet_wrap('roi_num') +
   theme(strip.background = element_blank(),
@@ -241,6 +241,12 @@ ggplot(df_subs, aes(x = xplot, y = median)) +
 
 ```
 
+```{r}
+# Plot subject replicates
+# Implemented with data.table. Sorry. Open to the possibility of recoding with tidyverse, just not right now
+df_fit <- as.data.table(fit0)
+
+```
 
 ## Model 1: Finite mixture hyper-distribution
 
