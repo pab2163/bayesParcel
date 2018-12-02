@@ -14,6 +14,8 @@ library(rstan)
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 library(data.table)
+library(bayesplot)
+library(moments)
 ```
 
 ## Loading real data
@@ -161,6 +163,8 @@ theta_rois <- df_fit %>%
                                              int_50_lower = quantile(., .25),
                                              int_50_upper = quantile(., .75))))) %>%
   unnest(summaries, .preserve = "iterations")
+
+
 ```
 
 ### Plots?
@@ -214,7 +218,7 @@ ggplot(df_subs, aes(x = xplot, y = median)) +
   facet_wrap('subject_num') +
   theme(strip.background = element_blank(),
     strip.text.x = element_blank()) +
-  labs(x = 'ROI number (arbitrary)',
+  labs(x = 'subject number (arbitrary)',
        y = 'COPE',
        title = 'Posterior predictive checks: replicate plots by subject, for a random subsample of subjects',
        subtitle = 'Red: posterior median. Yellow: posterior 95% interval. Black: observed COPE')
@@ -238,17 +242,45 @@ ggplot(df_subs, aes(x = xplot, y = median)) +
 ```{r}
 # Compare thetas to priors
 df_fit <- as.data.table(fit0)
-theta_rois <- df_fit[, grepl('theta_roi', colnames(df_fit)), with = F]
-theta_subj <- df_fit[, grepl('theta_roi', colnames(df_fit)), with = F]
+vars <- colnames(df_fit)
+eta_rois <- df_fit[sample(1:nrow(df_fit), 20), grepl('eta_roi', vars) & !grepl('th', vars), with = F]
+eta_subj <- df_fit[sample(1:nrow(df_fit), 20), grepl('eta_subj', vars) & !grepl('th', vars), with = F]
+
+eta_rois[, sim := 1:.N]
+eta_subj[, sim := 1:.N]
+
+eta_rois <- melt(eta_rois, id.vars = 'sim')
+eta_subj <- melt(eta_subj, id.vars = 'sim')
+
+bw <- .2
+n_subj <- length(unique(eta_subj$variable))
+ggplot(eta_subj, aes(x = value)) + 
+  geom_histogram(binwidth = bw) +
+  facet_wrap('sim') +
+  stat_function(fun = function(x, bw, n) dnorm(x) * bw * n, 
+                args = c(bw = bw, n = n_subj),
+                color = 'blue') +
+  theme(strip.background = element_blank(),
+    strip.text.x = element_blank()) + 
+  labs(x = expression(eta),
+       title = 'Estimated ROI deviations agains the normal prior distribution',
+       subtitle = 'Black: ROI histogram, Blue: normal prior, Each facet represents a posterior draw')
+
+n_roi <- length(unique(eta_rois$variable))
+ggplot(eta_rois, aes(x = value)) + 
+  geom_histogram(binwidth = bw) +
+  facet_wrap('sim') +
+  stat_function(fun = function(x, bw, n) dnorm(x) * bw * n, 
+                args = c(bw = bw, n = n_roi),
+                color = 'blue') +
+  theme(strip.background = element_blank(),
+    strip.text.x = element_blank()) + 
+  labs(x = expression(eta),
+       title = 'Estimated subject deviations agains the normal prior distribution',
+       subtitle = 'Black: subject histogram, Blue: normal prior, Each facet represents a posterior draw')
+
 ```
 
-
-```{r}
-# Plot subject replicates
-# Implemented with data.table. Sorry. Open to the possibility of recoding with tidyverse, just not right now
-df_fit <- as.data.table(fit0)
-
-```
 
 ## Model 1: Finite mixture hyper-distribution
 
