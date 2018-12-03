@@ -90,7 +90,7 @@ generated quantities {
 }
 ```
 
-```{r}
+```{r, eval = FALSE}
 fit <- sampling(model0,
                 data = betas %$%
                   list(N = nrow(.),
@@ -101,6 +101,12 @@ fit <- sampling(model0,
                        subj = subject_num,
                        fd = meanFD_included_trs,
                        varcope = cope_sd_scaled))
+
+save(fit, file = "ignore/fit_model0.rda")
+```
+
+```{r}
+load("ignore/fit_model0.rda")
 ```
 
 ```{r}
