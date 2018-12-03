@@ -2,7 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
-# User-specific .Rproj file
+# User-specific files I think
 *.Rproj
+.DS_Store
 # Monica's data folder, not for upload
 ignore/*
