@@ -7,3 +7,6 @@
 *.DS_Store
 # Monica's data folder, not for upload
 ignore/*
+# Paul's extra folders, not for upload
+estimates/*
+roi/*
