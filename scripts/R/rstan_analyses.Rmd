@@ -30,8 +30,8 @@ betas <- betas_raw %>%
   filter(!is.na(value)) %>%
   mutate(statistic = if_else(grepl("Mean", roi), "cope_mean", "cope_sd"),
          roi = if_else(statistic == "cope_mean",
-                       str_sub(roi, end = -5L),
-                       str_sub(roi, end = -3L))) %>%
+                       stringr::str_sub(roi, end = -5L),
+                       stringr::str_sub(roi, end = -3L))) %>%
   spread(statistic, value) %>%
   # BAND AID!!! but we need ot filter cope_sd > 0. some shit failed
   filter(cope_sd > 0, wave == 1) %>%
@@ -294,3 +294,44 @@ ggplot(eta_rois, aes(x = value)) +
 ### Stan code
 
 ### Plots?
+
+Temporarily need to reload model object when done separately
+```{r}
+load('fit_model0.rda')
+
+## Redundant bit
+# 
+# df_fit <- fit %>%
+#   as.data.frame() %>%
+#   as_tibble() %>%
+#   mutate(iteration = 1:n())
+# 
+# theta_rois <- df_fit %>%
+#   select(iteration, starts_with("theta_roi")) %>%
+#   gather(key = "roi_num", value = "theta", starts_with("theta_roi")) %>%
+#   mutate(roi_num = as.integer(stringr::str_sub(roi_num, start = 11L, end = -2L)),
+#          theta_unscaled = theta * sd(betas$cope_mean)) %>%
+#   group_by(roi_num) %>%
+#   nest(.key = "iterations") %>%
+#   left_join(betas %>%
+#               select(roi_num, cope_mean, cope_mean_scaled) %>%
+#               group_by(roi_num) %>%
+#               summarize_all(mean),
+#             by = "roi_num") %>%
+#   mutate(summaries = map(iterations, ~.x %>%
+#                            summarize_at(vars(starts_with("theta")),
+#                                         funs(median = median,
+#                                              int_95_lower = quantile(., .025),
+#                                              int_95_upper = quantile(., .975),
+#                                              int_50_lower = quantile(., .25),
+#                                              int_50_upper = quantile(., .75))))) %>%
+#   unnest(summaries, .preserve = "iterations") 
+
+# Save out the thetas for each roi
+theta_rois = dplyr::select(betas, roi, roi_num) %>%
+  unique() %>%
+  left_join(theta_rois, .) %>%
+  select(-iterations)
+
+write.csv(theta_rois, file = '../../estimates/spreadsheets/mod0.csv', row.names = F, quote = F)
+```
