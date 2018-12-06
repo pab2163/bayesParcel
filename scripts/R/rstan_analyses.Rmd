@@ -14,7 +14,7 @@ library(rstan)
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 library(data.table)
-library(bayesplot)
+# library(bayesplot)
 library(moments)
 ```
 
@@ -112,23 +112,23 @@ fit0 <- sampling(model0,
                         varcope = cope_sd_scaled),
                  control = list(max_treedepth = 15))
 
-save(fit0, file = "ignore/fit_model0.rda")
+save(fit0, file = "../../ignore/fit_model0.rda")
 ```
 
 ```{r}
-load("ignore/fit_model0.rda")
+load("../../ignore/fit_model0.rda")
 ```
 
 ```{r}
-df_fit <- fit0 %>%
+df_fit0 <- fit0 %>%
   as.data.frame() %>%
   as_tibble() %>%
   mutate(iteration = 1:n())
 
-hyperparams <- df_fit %>%
+hyperparams <- df_fit0 %>%
   select(iteration, alpha, tau_roi, tau_subj)
 
-eta_rois <- df_fit %>%
+eta_rois <- df_fit0 %>%
   select(iteration, tau_roi, starts_with("eta_roi")) %>%
   gather(key = "roi_num", value = "eta", starts_with("eta_roi")) %>%
   mutate(roi_num = as.integer(str_sub(roi_num, start = 9L, end = -2L)),
@@ -149,7 +149,7 @@ eta_rois <- df_fit %>%
                                              int_50_upper = quantile(., .75))))) %>%
   unnest(summaries, .preserve = "iterations")
 
-theta_rois <- df_fit %>%
+theta_rois <- df_fit0 %>%
   select(iteration, starts_with("theta_roi")) %>%
   gather(key = "roi_num", value = "theta", starts_with("theta_roi")) %>%
   mutate(roi_num = as.integer(str_sub(roi_num, start = 11L, end = -2L)),
@@ -188,21 +188,22 @@ theta_rois %>%
        subtitle = "Black: median estimates +- 95% predictive interval, pink: original mean estimate") +
   theme_bw()
 ```
+
 ```{r}
 # Plot data replicates
 # Implemented with data.table. Sorry. Open to the possibility of recoding with tidyverse, just not right now
-df_fit <- as.data.table(fit0)
-df_fit <- df_fit[, grepl('rep_cope', colnames(df_fit)), with = F]
+df_fit0 <- as.data.table(fit0)
+df_fit0 <- df_fit[, grepl('rep_cope', colnames(df_fit)), with = F]
 df_fit[, sim := 1:nrow(df_fit)]
-df_fit <- melt(df_fit, id.vars = 'sim')
+df_fit0 <- melt(df_fit, id.vars = 'sim')
 df_fit[, value := value * sd(betas$cope_mean)]
-df_fit <- df_fit[, .(median = median(value),
+df_fit0 <- df_fit[, .(median = median(value),
                      lb = quantile(value, 0.025),
                      ub = quantile(value, 0.975)), by = variable][order(variable)]
 df_fit[, subject_num := betas$subject_num]
 df_fit[, roi_num := betas$roi_num]
 df_fit[, true_value := betas$cope_mean]
-df_fit <- df_fit[order(true_value)]
+df_fit0 <- df_fit[order(true_value)]
 
 # Plot disregarding heirarchy
 ggplot(df_fit, aes(x = 1:nrow(df_fit), y = median)) +
@@ -248,7 +249,7 @@ ggplot(df_subs, aes(x = xplot, y = median)) +
 
 ```{r}
 # Compare thetas to priors
-df_fit <- as.data.table(fit0)
+df_fit0 <- as.data.table(fit0)
 vars <- colnames(df_fit)
 eta_rois <- df_fit[sample(1:nrow(df_fit), 20), grepl('eta_roi', vars) & !grepl('th', vars), with = F]
 eta_subj <- df_fit[sample(1:nrow(df_fit), 20), grepl('eta_subj', vars) & !grepl('th', vars), with = F]
@@ -293,6 +294,182 @@ ggplot(eta_rois, aes(x = value)) +
 
 ### Stan code
 
+```{stan, output.var = "model1", results = "hide", message = FALSE, warning = FALSE}
+data {
+  real beta_0; // middle alpha
+  int<lower=0> N;          // number of rois x observations (subjs x waves)
+  int<lower=0> N_roi;
+  int<lower=0> N_subj;
+  real cope[N];               // estimated effects for each observation of roi
+  int<lower=1, upper=N_roi> roi[N]; // ROI ID of each observation
+  int<lower=1, upper=N_subj> subj[N]; // subject ID of each observation
+  real<lower=0> fd[N]; // framewise displacement of each observation, varies by subject x wave
+  real<lower=0> varcope[N];  // s.e. of effect estimates
+}
+transformed data {
+  int<lower=0> N_cell = N_roi * N_subj;
+}
+parameters {
+  // real alpha; // general intercept
+  simplex[3] phi; // mixing phroportions
+  real<upper=0> beta_neg; // center of negative mixture component
+  real<lower=0> beta_pos; // center of positive mixture component
+  real<lower=0> tau_roi;
+  real<lower=0> tau_subj;
+  matrix[N_roi, 3] eta_roi; // centered parameterization of roi-specific effect estimate
+  vector[N_subj] eta_subj; // centered parameterization of roi-specific effect estimate
+}
+transformed parameters {
+  // hard coding 3 mixture components, shrug
+  vector[3] beta; // all the mixture centers
+  beta[1] = beta_neg;
+  beta[2] = beta_0;
+  beta[3] = beta_pos;
+}
+model {
+  vector[3] log_phi = log(phi);  // cache log calculation
+
+  // priors make the world go round
+  // alpha ~ normal(0, 1);
+  
+  // weakly informative prior for all three betas
+  beta_neg ~ normal(0, 5);
+  beta_0 ~ normal(0, 5);
+  beta_pos ~ normal(0, 5);
+  
+  // wip for taus
+  tau_roi ~ normal(0, 1);
+  tau_subj ~ normal(0, 1);
+  
+  // wip for etas
+  for (k in 1:3) {
+    eta_roi[, k] ~ normal(0, 1);
+  }
+  
+  eta_subj ~ normal(0, 1);
+  
+  // likelihood stuff
+  for (n in 1:N) {
+    vector[3] lps = log_phi;
+    for (k in 1:3)
+      // lps[k] += normal_lpdf(y[n] | mu[k], sigma[k]); // from 2.10
+      lps[k] += normal_lpdf(cope[n] | beta[k] + tau_roi * eta_roi[roi[n], k] + tau_subj * eta_subj[subj[n]], varcope[n]);
+    target += log_sum_exp(lps);
+  }
+  
+  // This was the old one, leaving here just in case
+  // cope ~ normal(alpha + tau_roi * eta_roi[roi] + tau_subj * eta_subj[subj], varcope);
+}
+generated quantities {
+  // generated thetas, one for each component
+  matrix[N_roi, 3] theta_roi;
+  for (k in 1:3) {
+    theta_roi[, k] = beta[k] + tau_roi * eta_roi[, k];
+  }
+  
+//  vector [N] rep_cope; // Create data replicates
+
+//  for (i in 1:N)
+//    rep_cope[i] = normal_rng(alpha + tau_roi * eta_roi[roi][i] + tau_subj * eta_subj[subj][i], varcope[i]);
+}
+
+```
+
+```{stan, output.var = "model1.2", results = "hide", message = FALSE, warning = FALSE}
+data {
+  real beta_0; // middle alpha
+  int<lower=0> N;          // number of rois x observations (subjs x waves)
+  int<lower=0> N_roi;
+  int<lower=0> N_subj;
+  real cope[N];               // estimated effects for each observation of roi
+  int<lower=1, upper=N_roi> roi[N]; // ROI ID of each observation
+  int<lower=1, upper=N_subj> subj[N]; // subject ID of each observation
+  real<lower=0> fd[N]; // framewise displacement of each observation, varies by subject x wave
+  real<lower=0> varcope[N];  // s.e. of effect estimates
+}
+transformed data {
+  int<lower=0> N_cell = N_roi * N_subj;
+}
+parameters {
+  // real alpha; // general intercept
+  simplex[2] phi; // mixing phroportions
+  real<lower=0> beta_pos; // center of positive mixture component
+  real<lower=0> tau_roi;
+  real<lower=0> tau_subj;
+  matrix[N_roi, 3] eta_roi; // centered parameterization of roi-specific effect estimate
+  vector[N_subj] eta_subj; // centered parameterization of roi-specific effect estimate
+}
+transformed parameters {
+  // hard coding 3 mixture components, shrug
+  vector[3] beta; // all the mixture centers
+  beta[1] = beta_neg;
+  beta[2] = beta_0;
+  beta[3] = beta_pos;
+}
+model {
+  vector[3] log_phi = log(phi);  // cache log calculation
+
+  // priors make the world go round
+  // alpha ~ normal(0, 1);
+  
+  // weakly informative prior for all three betas
+  beta_neg ~ normal(0, 5);
+  beta_0 ~ normal(0, 5);
+  beta_pos ~ normal(0, 5);
+  
+  // wip for taus
+  tau_roi ~ normal(0, 1);
+  tau_subj ~ normal(0, 1);
+  
+  // wip for etas
+  for (k in 1:3) {
+    eta_roi[, k] ~ normal(0, 1);
+  }
+  
+  eta_subj ~ normal(0, 1);
+  
+  // likelihood stuff
+  for (n in 1:N) {
+    vector[3] lps = log_phi;
+    for (k in 1:3)
+      // lps[k] += normal_lpdf(y[n] | mu[k], sigma[k]); // from 2.10
+      lps[k] += normal_lpdf(cope[n] | beta[k] + tau_roi * eta_roi[roi[n], k] + tau_subj * eta_subj[subj[n]], varcope[n]);
+    target += log_sum_exp(lps);
+  }
+  
+  // This was the old one, leaving here just in case
+  // cope ~ normal(alpha + tau_roi * eta_roi[roi] + tau_subj * eta_subj[subj], varcope);
+}
+generated quantities {
+  // generated thetas, one for each component
+  matrix[N_roi, 3] theta_roi;
+  for (k in 1:3) {
+    theta_roi[, k] = beta[k] + tau_roi * eta_roi[, k];
+  }
+  
+//  vector [N] rep_cope; // Create data replicates
+
+//  for (i in 1:N)
+//    rep_cope[i] = normal_rng(alpha + tau_roi * eta_roi[roi][i] + tau_subj * eta_subj[subj][i], varcope[i]);
+}
+
+```
+
+```{r, eval = FALSE}
+fit1 <- sampling(model1,
+                 data = betas %$%
+                   list(N = nrow(.),
+                        N_roi = max(roi_num),
+                        N_subj = max(subject_num),
+                        cope = cope_mean_scaled,
+                        roi = roi_num,
+                        subj = subject_num,
+                        fd = meanFD_included_trs,
+                        varcope = cope_sd_scaled),
+                 iter = 100,
+                 control = list(max_treedepth = 15))
+```
+
 ### Plots?
 
 Temporarily need to reload model object when done separately
@@ -301,12 +478,12 @@ load('fit_model0.rda')
 
 ## Redundant bit
 # 
-# df_fit <- fit %>%
+# df_fit0 <- fit %>%
 #   as.data.frame() %>%
 #   as_tibble() %>%
 #   mutate(iteration = 1:n())
 # 
-# theta_rois <- df_fit %>%
+# theta_rois <- df_fit0 %>%
 #   select(iteration, starts_with("theta_roi")) %>%
 #   gather(key = "roi_num", value = "theta", starts_with("theta_roi")) %>%
 #   mutate(roi_num = as.integer(stringr::str_sub(roi_num, start = 11L, end = -2L)),
@@ -335,3 +512,4 @@ theta_rois = dplyr::select(betas, roi, roi_num) %>%
 
 write.csv(theta_rois, file = '../../estimates/spreadsheets/mod0.csv', row.names = F, quote = F)
 ```
+
