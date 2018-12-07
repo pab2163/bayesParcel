@@ -54,6 +54,10 @@ subcortical 1, 2, 8 (brainstem), 12, 13
 ## Simulating data
 
 ## Model 0: Single normal hyper-distribution
+$$COPE_{i} \sim normal(\alpha + \tau_{ROI} * \eta_{ROI[i]} + \tau_{subject} * \eta_{subject[i]}) $$
+$$\eta_{subject} \sim normal(0,1)$$
+$$\eta_{ROI} \sim normal(0,1)$$
+
 
 ### Stan code
 
