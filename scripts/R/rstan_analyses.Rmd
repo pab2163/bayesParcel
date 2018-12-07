@@ -49,12 +49,6 @@ exclude <- c('harvardox_subcortical_1', 'harvardox_subcortical_2', 'harvardox_su
 betas <- subset(betas, !(roi %in% exclude))
 ```
 
-ROIs to exclude*:
-
-subcortical 1, 2, 8 (brainstem), 12, 13
-
-## Simulating data
-
 ## Model 0: Single normal hyper-distribution
 As a starting point, we chose to model COPE responses in the different ROIs with a model based on the 8-school example. As such, this is a heirarchical model, with each ROI drawn from a population of ROIs with a normal distribution, and each subject drawn from a population of subjects with a normal distribution. Thus, the likelihood in our model is:
 $$COPE_{i} \sim normal(\alpha + \tau_{ROI} * \eta_{ROI[i]} + \tau_{subject} * \eta_{subject[i]}) $$
@@ -105,7 +99,124 @@ generated quantities {
     rep_cope[i] = normal_rng(alpha + tau_roi * eta_roi[roi][i] + tau_subj * eta_subj[subj][i], varcope[i]);
 }
 ```
+### Fake data simulation
+Before fitting the model to the data, we'll begin by evaluating the model's potency in recovering known parameters. We used Stan to simulate data given parameters drawn from the priors in our model. We then fit the simulated data, and checked the resultant posterior intervals against the know values of the parameters. 
+```{stan, output.var = "model0_fake", results = "hide", message = FALSE, warning = FALSE}
+data {
+  int<lower=0> N;          // number of rois x observations (subjs x waves)
+  int<lower=0> N_roi;
+  int<lower=0> N_subj;
+  int<lower=1, upper=N_roi> roi[N]; // ROI ID of each observation
+  int<lower=1, upper=N_subj> subj[N]; // subject ID of each observation
+  real<lower=0> varcope[N];  // s.e. of effect estimates
+}
+parameters {
+  real alpha; // intercept 
+  real<lower=0> tau_roi;
+  real<lower=0> tau_subj;
+  vector[N_roi] eta_roi; // centered parameterization of roi-specific effect estimate
+  vector[N_subj] eta_subj; // centered parameterization of roi-specific effect estimate
+}
+model {
+  // priors make the world go round
+  alpha ~ normal(0, 1);
+  tau_roi ~ normal(0, 1);
+  tau_subj ~ normal(0, 1);
+  eta_roi ~ normal(0, 1);
+  eta_subj ~ normal(0, 1);
+}
+generated quantities {
+  vector [N] cope; // Create data replicates
+  for (i in 1:N)
+    cope[i] = normal_rng(alpha + tau_roi * eta_roi[roi][i] + tau_subj * eta_subj[subj][i], varcope[i]);
+}
+```
 
+```{r results = "hide", message = FALSE, warning = FALSE}
+# Draw fake data
+fake_data0 <- sampling(model0_fake, data = betas %$%
+                   list(N = nrow(.),
+                        N_roi = max(roi_num),
+                        N_subj = max(subject_num),
+                        roi = roi_num,
+                        subj = subject_num,
+                        fd = meanFD_included_trs,
+                        varcope = cope_sd_scaled),
+                   iter = 1, warmup = 0, chain = 1, seed = 78)
+
+# Fake data book keeping
+fake_data0 <- as.data.table(fake_data0)
+fake_params0 <- fake_data0[, !grepl('cope', colnames(fake_data0)), with = F]
+fake_data0 <- fake_data0[, grepl('cope', colnames(fake_data0)), with = F]
+fake_data0 <- melt(fake_data0, measure.vars = colnames(fake_data0))
+```
+
+``` {r eval = F}
+# Fit fake data
+fake_fit0 <- sampling(model0,
+                 data = betas %$%
+                   list(N = nrow(.),
+                        N_roi = max(roi_num),
+                        N_subj = max(subject_num),
+                        cope = fake_data0$value,
+                        roi = roi_num,
+                        subj = subject_num,
+                        fd = meanFD_included_trs,
+                        varcope = cope_sd_scaled),
+                 seed = 2323)
+save(fake_fit0, file = "../../ignore/fake_fit0.rda")
+```
+
+```{r echo = F}
+load("../../ignore/fake_fit0.rda")
+```
+
+```{r}
+# Check parameter recovery
+fake_fit0 <- as.data.table(fake_fit0)
+fake_fit0 <- melt(fake_fit0, measure.vars = colnames(fake_fit0)) 
+fake_fit0 <- fake_fit0[, .(median = median(value),
+                           ub = quantile(value, 0.975),
+                           lb = quantile(value, 0.025)), by = variable]
+fake_params0 <- melt(fake_params0, measure.vars = colnames(fake_params0), value.name = 'trueVal')
+fake_fit0 <- merge(fake_fit0, fake_params0, by = 'variable')
+fake_fit0 <- fake_fit0[!grepl('lp_', variable, fixed = T),]
+
+ggplot(fake_fit0[grepl('eta_roi',variable),], aes(x = median, y = variable)) +
+  geom_errorbarh(aes(xmin = lb, xmax = ub)) +
+  geom_point() +
+  geom_point(aes(x = trueVal), color = 'red') +
+  theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  labs(x = 'Parameter value',
+       title = 'Simulated data parameter recover: eta_ROI',
+       subtitle = 'Black: posterior median and 95% interval. Red: true parameter value')
+
+ggplot(fake_fit0[grepl('eta_subj',variable),], aes(x = median, y = variable)) +
+  geom_errorbarh(aes(xmin = lb, xmax = ub)) +
+  geom_point() +
+  geom_point(aes(x = trueVal), color = 'red') +
+  theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  labs(x = 'Parameter value',
+       title = 'Simulated data parameter recover: eta_subject',
+       subtitle = 'Black: posterior median and 95% interval. Red: true parameter value')
+
+ggplot(fake_fit0[!grepl('eta_roi',variable) &!grepl('eta_subj',variable),], 
+       aes(x = median, y = variable)) +
+  geom_errorbarh(aes(xmin = lb, xmax = ub)) +
+  geom_point() +
+  geom_point(aes(x = trueVal), color = 'red') +
+  labs(x = 'Parameter value',
+       title = 'Simulated data parameter recover: hyperparameters',
+       subtitle = 'Black: posterior median and 95% interval. Red: true parameter value')
+```
+As can be seen in the plots above, for the vast majority of parameters in this fit, the true value lies within the 95% posterior interval, as we would expect. Since we drew parameters from the priors for our model, we can see this result as rather general.
+
+### Data fit
+Next, we fit the observed data with our model.
 ```{r, eval = FALSE}
 fit0 <- sampling(model0,
                  data = betas %$%
