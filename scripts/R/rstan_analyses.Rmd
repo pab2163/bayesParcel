@@ -20,8 +20,6 @@ library(moments)
 
 ## Loading real data
 
-Under construction because Paul hasn't uploaded the data yet.
-
 ```{r}
 betas_raw <- read_csv("../../ignore/harvard_ox_roi.csv")
 
@@ -54,13 +52,14 @@ subcortical 1, 2, 8 (brainstem), 12, 13
 ## Simulating data
 
 ## Model 0: Single normal hyper-distribution
+As a starting point, we chose to model COPE responses in the different ROIs with a model based on the 8-school example. As such, this is a heirarchical model, with each ROI drawn from a population of ROIs with a normal distribution, and each subject drawn from a population of subjects with a normal distribution. Thus, the likelihood in our model is:
 $$COPE_{i} \sim normal(\alpha + \tau_{ROI} * \eta_{ROI[i]} + \tau_{subject} * \eta_{subject[i]}) $$
+With mid-level priors for ROI and subject being:
 $$\eta_{subject} \sim normal(0,1)$$
 $$\eta_{ROI} \sim normal(0,1)$$
-
+Finally, we used non-informative priors for the variance and general expected value hyper parameters ($\alpha$ and $\tau_{subject / ROI}$), for regulaization purposes.
 
 ### Stan code
-
 ```{stan, output.var = "model0", results = "hide", message = FALSE, warning = FALSE}
 data {
   int<lower=0> N;          // number of rois x observations (subjs x waves)
@@ -114,12 +113,13 @@ fit0 <- sampling(model0,
                         subj = subject_num,
                         fd = meanFD_included_trs,
                         varcope = cope_sd_scaled),
-                 control = list(max_treedepth = 15))
+                 control = list(max_treedepth = 15),
+                 seed = 909)
 
 save(fit0, file = "../../ignore/fit_model0.rda")
 ```
 
-```{r}
+```{r echo = F}
 load("../../ignore/fit_model0.rda")
 ```
 
