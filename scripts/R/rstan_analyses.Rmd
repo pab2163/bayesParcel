@@ -14,7 +14,6 @@ library(rstan)
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 library(data.table)
-# library(bayesplot)
 library(moments)
 ```
 
@@ -43,6 +42,11 @@ betas <- betas_raw %>%
   unnest() %>%
   mutate(cope_mean_scaled = cope_mean / sd(cope_mean),
          cope_sd_scaled = cope_sd / sd(cope_mean))
+
+# Exclude nonsense ROIs
+exclude <- c('harvardox_subcortical_1', 'harvardox_subcortical_2', 'harvardox_subcortical_8',
+             'harvardox_subcortical_12', 'harvardox_subcortical_13')
+betas <- subset(betas, !(roi %in% exclude))
 ```
 
 ROIs to exclude*:
