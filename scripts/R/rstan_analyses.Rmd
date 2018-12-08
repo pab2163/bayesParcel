@@ -43,7 +43,8 @@ betas <- betas_raw %>%
   mutate(cope_mean_scaled = cope_mean / sd(cope_mean),
          cope_sd_scaled = cope_sd / sd(cope_mean))
 
-<<<<<<< HEAD
+```
+
 ```{r}
 betas %>%
   ggplot(aes(x = roi_num, y = cope_mean_scaled)) +
@@ -55,11 +56,13 @@ betas %>%
 ## Simulating data
 =======
 # Exclude nonsense ROIs
+
+```{r}
 exclude <- c('harvardox_subcortical_1', 'harvardox_subcortical_2', 'harvardox_subcortical_8',
              'harvardox_subcortical_12', 'harvardox_subcortical_13')
 betas <- subset(betas, !(roi %in% exclude))
 ```
->>>>>>> c07978bc6a6cc986c2a2192f99ef6c9d21813eee
+
 
 ## Model 0: Single normal hyper-distribution
 As a starting point, we chose to model COPE responses in the different ROIs with a model based on the 8-school example. As such, this is a heirarchical model, with each ROI drawn from a population of ROIs with a normal distribution, and each subject drawn from a population of subjects with a normal distribution. Thus, the likelihood in our model is:
