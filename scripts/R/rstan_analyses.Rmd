@@ -16,6 +16,8 @@ rstan_options(auto_write = TRUE)
 library(data.table)
 library(moments)
 ```
+# Introduction
+Paul
 
 ## Loading real data
 
@@ -46,25 +48,13 @@ betas <- betas_raw %>%
 ```
 
 ```{r}
-betas %>%
-  ggplot(aes(x = roi_num, y = cope_mean_scaled)) +
-  geom_errorbar(aes(ymin = cope_mean_scaled - cope_sd_scaled, ymax = cope_mean_scaled + cope_sd_scaled), width = 0, alpha = 0.3) +
-  geom_point(alpha = 0.3)
-```
-
-
-## Simulating data
-=======
 # Exclude nonsense ROIs
-
-```{r}
 exclude <- c('harvardox_subcortical_1', 'harvardox_subcortical_2', 'harvardox_subcortical_8',
              'harvardox_subcortical_12', 'harvardox_subcortical_13')
 betas <- subset(betas, !(roi %in% exclude))
 ```
 
-
-## Model 0: Single normal hyper-distribution
+# Model 0: Single normal hyper-distribution
 As a starting point, we chose to model COPE responses in the different ROIs with a model based on the 8-school example. As such, this is a heirarchical model, with each ROI drawn from a population of ROIs with a normal distribution, and each subject drawn from a population of subjects with a normal distribution. Thus, the likelihood in our model is:
 $$COPE_{i} \sim normal(\alpha + \tau_{ROI} * \eta_{ROI[i]} + \tau_{subject} * \eta_{subject[i]}) $$
 With mid-level priors for ROI and subject being:
@@ -72,7 +62,7 @@ $$\eta_{subject} \sim normal(0,1)$$
 $$\eta_{ROI} \sim normal(0,1)$$
 Finally, we used non-informative priors for the variance and general expected value hyper parameters ($\alpha$ and $\tau_{subject / ROI}$), for regulaization purposes.
 
-### Stan code
+## Stan code
 ```{stan, output.var = "model0", results = "hide", message = FALSE, warning = FALSE}
 data {
   int<lower=0> N;          // number of rois x observations (subjs x waves)
@@ -114,7 +104,7 @@ generated quantities {
     rep_cope[i] = normal_rng(alpha + tau_roi * eta_roi[roi][i] + tau_subj * eta_subj[subj][i], varcope[i]);
 }
 ```
-### Fake data simulation
+## Fake data simulation
 Before fitting the model to the data, we'll begin by evaluating the model's potency in recovering known parameters. We used Stan to simulate data given parameters drawn from the priors in our model. We then fit the simulated data, and checked the resultant posterior intervals against the know values of the parameters. 
 ```{stan, output.var = "model0_fake", results = "hide", message = FALSE, warning = FALSE}
 data {
@@ -230,7 +220,7 @@ ggplot(fake_fit0[!grepl('eta_roi',variable) &!grepl('eta_subj',variable),],
 ```
 As can be seen in the plots above, for the vast majority of parameters in this fit, the true value lies within the 95% posterior interval, as we would expect. Since we drew parameters from the priors for our model, we can see this result as rather general.
 
-### Data fit
+## Data fit
 Next, we fit the observed data with our model.
 ```{r, eval = FALSE}
 fit0 <- sampling(model0,
@@ -307,8 +297,6 @@ theta_rois <- df_fit0 %>%
 
 ```
 
-### Plots?
-
 SCALED (divided by sd(cope)):
 
 ```{r}
@@ -341,6 +329,10 @@ theta_rois %>%
   theme_bw()
 ```
 
+### Brain plots
+
+### Posterior predictive checks
+Yaniv
 ```{r}
 # Plot data replicates
 # Implemented with data.table. Sorry. Open to the possibility of recoding with tidyverse, just not right now
@@ -441,9 +433,8 @@ ggplot(eta_rois, aes(x = value)) +
 
 ```
 
-
 ## Model 1: Finite mixture hyper-distribution
-
+Monica
 ### Stan code
 
 ```{stan, output.var = "model1", results = "hide", message = FALSE, warning = FALSE}
@@ -761,3 +752,20 @@ theta_rois = dplyr::select(betas, roi, roi_num) %>%
 write.csv(theta_rois, file = '../../estimates/spreadsheets/mod0.csv', row.names = F, quote = F)
 ```
 
+# Discussion
+
+## Why we trashed the mixture models
+```{r}
+betas %>%
+  ggplot(aes(x = roi_num, y = cope_mean_scaled)) +
+  geom_errorbar(aes(ymin = cope_mean_scaled - cope_sd_scaled, ymax = cope_mean_scaled + cope_sd_scaled), width = 0, alpha = 0.3) +
+  geom_point(alpha = 0.3)
+
+ggplot(betas, aes(x = cope_mean_scaled)) +
+  geom_histogram(binwidth=.2)
+
+summary(betas)
+```
+
+## Future directions for neuroscience in general
+Paul
