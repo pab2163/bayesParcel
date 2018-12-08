@@ -51,6 +51,14 @@ ROIs to exclude*:
 
 subcortical 1, 2, 8 (brainstem), 12, 13
 
+```{r}
+betas %>%
+  ggplot(aes(x = roi_num, y = cope_mean_scaled)) +
+  geom_errorbar(aes(ymin = cope_mean_scaled - cope_sd_scaled, ymax = cope_mean_scaled + cope_sd_scaled), width = 0, alpha = 0.3) +
+  geom_point(alpha = 0.3)
+```
+
+
 ## Simulating data
 
 ## Model 0: Single normal hyper-distribution
@@ -185,7 +193,7 @@ theta_rois %>%
   geom_point(aes(y = theta_median)) +
   geom_point(aes(y = cope_mean_scaled), color = "hotpink") +
   labs(x = "ROI number (arbitrary)",
-       y = "COPE/beta value (arbitrary units)",
+       y = "COPE/beta value (SCALED arbitrary units)",
        title = "Bayesian estimates against original marginal means",
        subtitle = "Black: median estimates +- 95% predictive interval, pink: original mean estimate") +
   theme_bw()
@@ -424,7 +432,86 @@ model {
   // alpha ~ normal(0, 1);
   
   // weakly informative prior for all betas
-  beta ~ normal(0, 5);
+  beta ~ normal(0, 2);
+  
+  // wip for taus
+  tau_roi ~ normal(0, 1);
+  tau_subj ~ normal(0, 1);
+  
+  // wip for etas
+  for (k in 1:K) {
+    eta_roi[, k] ~ normal(0, 1);
+  }
+  
+  eta_subj ~ normal(0, 1);
+  
+  // likelihood stuff
+  for (n in 1:N) {
+    vector[K] lps = log_phi;
+    for (k in 1:K)
+      // lps[k] += normal_lpdf(y[n] | mu[k], sigma[k]); // from 2.10
+      lps[k] += normal_lpdf(cope[n] | beta[k] + tau_roi * eta_roi[roi[n], k] + tau_subj * eta_subj[subj[n]], varcope[n]);
+    target += log_sum_exp(lps);
+  }
+}
+generated quantities {
+  // generated thetas, one for each component
+  matrix[N_roi, K] theta_roi;
+  matrix[N, K] p;
+  
+  for (k in 1:K) {
+    theta_roi[, k] = beta[k] + tau_roi * eta_roi[, k];
+  }
+  
+  for (n in 1:N){
+    vector[K] p_raw;
+    for (k in 1:K){
+      p_raw[k] = phi[k] * exp(normal_log(cope[n], beta[k] + tau_roi * eta_roi[roi[n], k] + tau_subj * eta_subj[subj[n]], varcope[n]));
+    }
+    for (k in 1:K){
+      p[n,k] = p_raw[k]/sum(p_raw);
+    }
+  }
+//  vector [N] rep_cope; // Create data replicates
+
+//  for (i in 1:N)
+//    rep_cope[i] = normal_rng(alpha + tau_roi * eta_roi[roi][i] + tau_subj * eta_subj[subj][i], varcope[i]);
+}
+
+```
+
+```{stan, output.var = "model1.3", results = "hide", message = FALSE, warning = FALSE}
+data {
+  int<lower=1> K; // number of mixture components
+  ordered[K] beta; // centers of mixture components
+  int<lower=0> N;          // number of rois x observations (subjs x waves)
+  int<lower=0> N_roi;
+  int<lower=0> N_subj;
+  real cope[N];               // estimated effects for each observation of roi
+  int<lower=1, upper=N_roi> roi[N]; // ROI ID of each observation
+  int<lower=1, upper=N_subj> subj[N]; // subject ID of each observation
+  real<lower=0> fd[N]; // framewise displacement of each observation, varies by subject x wave
+  real<lower=0> varcope[N];  // s.e. of effect estimates
+}
+transformed data {
+  int<lower=0> N_cell = N_roi * N_subj;
+}
+parameters {
+  // real alpha; // general intercept
+  simplex[K] phi; // mixing phroportions
+  real<lower=0> tau_roi;
+  real<lower=0> tau_subj;
+  matrix[N_roi, K] eta_roi; // centered parameterization of roi-specific effect estimate
+  vector[N_subj] eta_subj; // centered parameterization of roi-specific effect estimate
+}
+model {
+  vector[2] log_phi = log(phi);  // cache log calculation
+
+  // priors make the world go round
+  // alpha ~ normal(0, 1);
+  
+  // rather informative prior for all betas
+  beta ~ normal(0, 1);
   
   // wip for taus
   tau_roi ~ normal(0, 1);
@@ -484,7 +571,24 @@ fit1.2 <- sampling(model1.2,
                         subj = subject_num,
                         fd = meanFD_included_trs,
                         varcope = cope_sd_scaled),
-                 iter = 100,
+                 iter = 200,
+                 control = list(max_treedepth = 15))
+```
+
+```{r, eval = FALSE}
+fit1.3 <- sampling(model1.3,
+                 data = betas %$%
+                   list(K = 2L,
+                        beta = c(0.3, 1),
+                        N = nrow(.),
+                        N_roi = max(roi_num),
+                        N_subj = max(subject_num),
+                        cope = cope_mean_scaled,
+                        roi = roi_num,
+                        subj = subject_num,
+                        fd = meanFD_included_trs,
+                        varcope = cope_sd_scaled),
+                 iter = 200,
                  control = list(max_treedepth = 15))
 ```
 
