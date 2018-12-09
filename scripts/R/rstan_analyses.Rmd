@@ -55,12 +55,12 @@ betas <- subset(betas, !(roi %in% exclude))
 ```
 
 # Model 0: Single normal hyper-distribution
-As a starting point, we chose to model COPE responses in the different ROIs with a model based on the 8-school example. As such, this is a heirarchical model, with each ROI drawn from a population of ROIs with a normal distribution, and each subject drawn from a population of subjects with a normal distribution. Thus, the likelihood in our model is:
+As a starting point, we chose to model COPE responses in the different ROIs with a model based on the 8-school example. As such, this is a hierarchical model, with each ROI drawn from a population of ROIs with a normal distribution, and each subject drawn from a population of subjects with a normal distribution. Thus, the likelihood in our model is:
 $$COPE_{i} \sim normal(\alpha + \tau_{ROI} * \eta_{ROI[i]} + \tau_{subject} * \eta_{subject[i]}) $$
 With mid-level priors for ROI and subject being:
 $$\eta_{subject} \sim normal(0,1)$$
 $$\eta_{ROI} \sim normal(0,1)$$
-Finally, we used non-informative priors for the variance and general expected value hyper parameters ($\alpha$ and $\tau_{subject / ROI}$), for regulaization purposes.
+Finally, we used non-informative priors for the variance and general expected value hyper parameters ($\alpha$ and $\tau_{subject / ROI}$), for regularization purposes.
 
 ## Stan code
 ```{stan, output.var = "model0", results = "hide", message = FALSE, warning = FALSE}
@@ -220,7 +220,7 @@ ggplot(fake_fit0[!grepl('eta_roi',variable) &!grepl('eta_subj',variable),],
 ```
 As can be seen in the plots above, for the vast majority of parameters in this fit, the true value lies within the 95% posterior interval, as we would expect. Since we drew parameters from the priors for our model, we can see this result as rather general.
 
-## Data fit
+## Model fit to data
 Next, we fit the observed data with our model.
 ```{r, eval = FALSE}
 fit0 <- sampling(model0,
@@ -252,27 +252,6 @@ df_fit0 <- fit0 %>%
 hyperparams <- df_fit0 %>%
   select(iteration, alpha, tau_roi, tau_subj)
 
-eta_rois <- df_fit0 %>%
-  select(iteration, tau_roi, starts_with("eta_roi")) %>%
-  gather(key = "roi_num", value = "eta", starts_with("eta_roi")) %>%
-  mutate(roi_num = as.integer(str_sub(roi_num, start = 9L, end = -2L)),
-         eta_unscaled = tau_roi * eta * sd(betas$cope_mean)) %>%
-  group_by(roi_num) %>%
-  nest(.key = "iterations") %>%
-  left_join(betas %>%
-              select(roi_num, cope_mean, cope_mean_scaled) %>%
-              group_by(roi_num) %>%
-              summarize_all(mean),
-            by = "roi_num") %>%
-  mutate(summaries = map(iterations, ~.x %>%
-                           summarize_at(vars(starts_with("eta")),
-                                        funs(median = median,
-                                             int_95_lower = quantile(., .025),
-                                             int_95_upper = quantile(., .975),
-                                             int_50_lower = quantile(., .25),
-                                             int_50_upper = quantile(., .75))))) %>%
-  unnest(summaries, .preserve = "iterations")
-
 theta_rois <- df_fit0 %>%
   select(iteration, starts_with("theta_roi")) %>%
   gather(key = "roi_num", value = "theta", starts_with("theta_roi")) %>%
@@ -297,8 +276,7 @@ theta_rois <- df_fit0 %>%
 
 ```
 
-SCALED (divided by sd(cope)):
-
+After fitting the model, we proceeded to perform some model check and evaluations. Comparing the observed COPE values to the estimated posterior intervals, we find that the estimated intervals are pooled towards the sample mean, in comparison to the raw values. The plot below illustrates this point. This is an expected advantageous feature of the hierarchical model, which allows partial pooling of estimates across ROIs and subjects.
 ```{r}
 theta_rois %>%
   ggplot(aes(x = roi_num)) +
@@ -313,44 +291,29 @@ theta_rois %>%
   theme_bw()
 ```
 
-UNSCALED (back on cope units):
-
-```{r}
-theta_rois %>%
-  ggplot(aes(x = roi_num)) +
-  geom_hline(yintercept = 0, linetype = 3) +
-  geom_errorbar(aes(ymin = theta_unscaled_int_95_lower, ymax = theta_unscaled_int_95_upper), width = 0) +
-  geom_point(aes(y = theta_unscaled_median)) +
-  geom_point(aes(y = cope_mean), color = "hotpink") +
-  labs(x = "ROI number (arbitrary)",
-       y = "COPE/beta value (arbitrary units)",
-       title = "Bayesian estimates against original marginal means",
-       subtitle = "Black: median estimates +- 95% predictive interval, pink: original mean estimate") +
-  theme_bw()
-```
-
 ### Brain plots
 
 ### Posterior predictive checks
-Yaniv
+To further evaluate the adequacy of the hierarchical normal model to the data, we performed posterior predictive checks. For each posterior draw, simulated data were generated with the same model likelihood, given the drawn parameters. These posterior replicates allow us to plot the interval of expected new observations, given our model and the observed data. Comparing our observed data to the predictive interval informs us about the adequacy of the chosen model.
+As can be seen of in the plots of replicates and observed data below, the observed data all fall withing the 95% interval of replicates. Thus, the data are plausible given the generative model. A drawback highlighted by this test, is that the median replicates are do not follow the observed data well at the extreme tails of the distribution: that is, the observed data seems to have consistently heavier tails than than the replicate data.
 ```{r}
 # Plot data replicates
 # Implemented with data.table. Sorry. Open to the possibility of recoding with tidyverse, just not right now
 df_fit0 <- as.data.table(fit0)
-df_fit0 <- df_fit[, grepl('rep_cope', colnames(df_fit)), with = F]
-df_fit[, sim := 1:nrow(df_fit)]
-df_fit0 <- melt(df_fit, id.vars = 'sim')
-df_fit[, value := value * sd(betas$cope_mean)]
-df_fit0 <- df_fit[, .(median = median(value),
+df_fit0 <- df_fit0[, grepl('rep_cope', colnames(df_fit0)), with = F]
+df_fit0[, sim := 1:nrow(df_fit0)]
+df_fit0 <- melt(df_fit0, id.vars = 'sim')
+df_fit0[, value := value * sd(betas$cope_mean)]
+df_fit0 <- df_fit0[, .(median = median(value),
                      lb = quantile(value, 0.025),
                      ub = quantile(value, 0.975)), by = variable][order(variable)]
-df_fit[, subject_num := betas$subject_num]
-df_fit[, roi_num := betas$roi_num]
-df_fit[, true_value := betas$cope_mean]
-df_fit0 <- df_fit[order(true_value)]
+df_fit0[, subject_num := betas$subject_num]
+df_fit0[, roi_num := betas$roi_num]
+df_fit0[, true_value := betas$cope_mean]
+df_fit0 <- df_fit0[order(true_value)]
 
 # Plot disregarding heirarchy
-ggplot(df_fit, aes(x = 1:nrow(df_fit), y = median)) +
+ggplot(df_fit0, aes(x = 1:nrow(df_fit0), y = median)) +
   geom_ribbon(aes(ymin = lb, ymax = ub), fill = 'yellow') +
   geom_line(color = 'darkred') + 
   geom_point(aes(y = true_value)) +
@@ -360,7 +323,7 @@ ggplot(df_fit, aes(x = 1:nrow(df_fit), y = median)) +
        subtitle = 'Red: posterior median. Yellow: posterior 95% interval. Black: observed COPE')
 
 # Plot by subject
-df_subs <- df_fit[subject_num %in% sample(1:length(unique(subject_num)), 20)]
+df_subs <- df_fit0[subject_num %in% sample(1:length(unique(subject_num)), 20)]
 df_subs[, xplot := 1:.N, by = subject_num]
 ggplot(df_subs, aes(x = xplot, y = median)) +
   geom_ribbon(aes(ymin = lb, ymax = ub), fill = 'yellow') +
@@ -375,7 +338,7 @@ ggplot(df_subs, aes(x = xplot, y = median)) +
        subtitle = 'Red: posterior median. Yellow: posterior 95% interval. Black: observed COPE')
 
 # Plot by roi
-df_subs <- df_fit[roi_num %in% sample(1:length(unique(roi_num)), 20)]
+df_subs <- df_fit0[roi_num %in% sample(1:length(unique(roi_num)), 20)]
 df_subs[, xplot := 1:.N, by = roi_num]
 ggplot(df_subs, aes(x = xplot, y = median)) +
   geom_ribbon(aes(ymin = lb, ymax = ub), fill = 'yellow') +
@@ -390,13 +353,13 @@ ggplot(df_subs, aes(x = xplot, y = median)) +
        subtitle = 'Red: posterior median. Yellow: posterior 95% interval. Black: observed COPE')
 
 ```
-
+The heavier tails in the observed data indicated that our mid-level priors might not be the best fit for the data. Hence, we compared the estimated draws for the ROI and subject deviations from the mean COPE to the normal prior we assigned them. The plots below reveal that overall, the estimated deviations conform to the shape of the normal prior. However, when inspecting the plots for the ROIs, they seem to have a rightward skew and a heavier right tail that is not consistent with a normal prior.
 ```{r}
 # Compare thetas to priors
 df_fit0 <- as.data.table(fit0)
-vars <- colnames(df_fit)
-eta_rois <- df_fit[sample(1:nrow(df_fit), 20), grepl('eta_roi', vars) & !grepl('th', vars), with = F]
-eta_subj <- df_fit[sample(1:nrow(df_fit), 20), grepl('eta_subj', vars) & !grepl('th', vars), with = F]
+vars <- colnames(df_fit0)
+eta_rois <- df_fit0[sample(1:nrow(df_fit0), 20), grepl('eta_roi', vars) & !grepl('th', vars), with = F]
+eta_subj <- df_fit0[sample(1:nrow(df_fit0), 20), grepl('eta_subj', vars) & !grepl('th', vars), with = F]
 
 eta_rois[, sim := 1:.N]
 eta_subj[, sim := 1:.N]
@@ -432,6 +395,8 @@ ggplot(eta_rois, aes(x = value)) +
        subtitle = 'Black: ROI histogram, Blue: normal prior, Each facet represents a posterior draw')
 
 ```
+### Model 0 summary
+Fitting a hierarchical normal model to the data, with normally distributed deviations for ROIs and subjects, seems like a good first choice for the data. The estimates are stable and interpretable, with observed data plausible given the generative model. However, a  tendency towards rightward skew in the distribution of estimated ROIs, and the comparison of replicates and observed data, prompted us to suspect that the extreme observations could be better modeled. This is in line with the modal theoretical view of imaging experiments: It is expected that regions in the brain should come from separate distributions. Commonly, it is assumed that a group of regions is positively activated by a given task, another group does not show activation, and possibly a third group shows negative values for the contrast of interest.
 
 ## Model 1: Finite mixture hyper-distribution
 Monica
