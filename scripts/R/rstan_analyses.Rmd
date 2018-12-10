@@ -39,7 +39,7 @@ Below, we demonstrate both models, and address their efficacy on both simulated 
 
 For this example, we test our model on an emotional face categorization task scanned using fMRI on a group of healthy devloping children. In the task, participants are shown different emotional faces and asked to press buttons to categorize which emotion they are seeing (neutral versus fearful faces). For our purposes, we focuse on estimating the activity in the brain associated with viewing the fearful faces above the 'baseline' of a fixation cross on the screen. For more information on this task, see [(Gee et al., 2013)](https://www.ncbi.nlm.nih.gov/pubmed/23467374)
 
-Similarly to the 8 schools example, we have a signal estimate for fearful faces for each ROI for each subject. In addition, we have a standard deviation for each of these estimates. Our data are formatted as below:
+Similarly to the 8 schools example, we have a single estimate for fearful faces for each ROI for each subject. In addition, we have a standard deviation for each of these estimates. Our data are formatted as below:
 
 ```{r}
 betas_raw <- read_csv("../../ignore/harvard_ox_roi.csv")
