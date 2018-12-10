@@ -17,9 +17,29 @@ library(data.table)
 library(moments)
 ```
 # Introduction
-Paul
+
+Functional magnetic resonance imaging (fMRI) is among the most popular methods used by psychologists and cognitive neuroscience to examine human brain activity. Because brain images for fMRI analysis contain hundreds of thousands of voxels (3-dimensional pixels) multiple comparisons is a large issue when attempting to make inference using this type of data. Over the last several years, the MRI field in general has become more aware of these issues as the power and replicability of many MRI studies has been shown to often be quite low [(Geuter et al., 2018](https://www.biorxiv.org/content/early/2018/04/06/295048); [Button et al., 2013](https://www.nature.com/articles/nrn3475); [Lieberman & Cunningham, 2009](https://academic.oup.com/scan/article/4/4/423/1670802)).
+
+One reason in particular why MRI analyses can tend to be low-powered is that voxel-level data is extremely noisy and unreliable. When conducting analyses to make inferences about populations, researchers typically first estimate subject-level activity at each voxel (we do not focus on these subject-level estimates for the purposes of this analysis), then when making inference on groups of subjects, use strict false discovery rate (FDR) controlling procedures to control Type 1 errors for which individual voxels are active under a null hypothesis significance testing (NHST) framework [(Genovese, Lazar, & Nichols, 2002)](https://www.sciencedirect.com/science/article/pii/S1053811901910377). This method of running a FDR-corrected test at the population level on each voxel independently, known as the 'Massively Univarite' approach to fMRI analysis, is currently an extremely popular tool. 
+
+Alternatively, if one has a prior hypothesis about a specific brain region for a population-level effect, it is common to use the 'region of interest' (ROI) approach, where population inference is done after voxelwise estimates are averaged across a spatial region of voxels. While this approach make assumptions about voxels within an ROI serving as one functional unit, because only one region is being investigated, power to detect true effects is, at least theoretically, higher. In practice, however, researchers may have many degrees of freedom in selecting ROIs, and estimates are biased if labs make it a practice of searching many regions (effectively making many comparisons) using NHST. 
+
+Inspired by ideas from a recent preprint [(Chen et al., 2018)](https://www.biorxiv.org/content/biorxiv/early/2017/12/22/238998.full.pdf) we set out here to try to offer an alternate approach to whole-brain inference by employing Bayesian Hierarchical Modeling with ROIs as the observational units. This approach should let us estimate activity for all regions at the population level simultaneously, using partial pooling to effectively account for multiple comparisons [(Gelman, Hill, & Yajima, 2012)](https://www.tandfonline.com/doi/abs/10.1080/19345747.2011.618213). Under this approach, we model the predicted activity for each region, within each subject. Similar to the 8 schools example (cite), we have data in the form of an estimate and standard deviation for each ROI, for each subject. ROIs in this case are defined using 68 regions of structural/functional signifance from the [Harvard-Oxford Brain Atlas](https://scalablebrainatlas.incf.org/human/HOA06s)
+
+
+Crucial to our models are the hyperparameters for the distributions from which different regions and subjects are drawn from. To address this, we try two models: 
+
+  * Model 0: This model assumes that all ROIs, at the population level, are drawn from one common distribution with a prior centered around 0 (or no activity). 
+  * Model 1: This model attempts to classify ROIs into mixture components of 'positively active', 'inactive', and 'negatively active' rather than assuming ROIs area all drawn from a common distribution. 
+  
+Below, we demonstrate both models, and address their efficacy on both simulated and real data. 
+
 
 ## Loading real data
+
+For this example, we test our model on an emotional face categorization task scanned using fMRI on a group of healthy devloping children. In the task, participants are shown different emotional faces and asked to press buttons to categorize which emotion they are seeing (neutral versus fearful faces). For our purposes, we focuse on estimating the activity in the brain associated with viewing the fearful faces above the 'baseline' of a fixation cross on the screen. For more information on this task, see [(Gee et al., 2013)](https://www.ncbi.nlm.nih.gov/pubmed/23467374)
+
+Similarly to the 8 schools example, we have a signal estimate for fearful faces for each ROI for each subject. In addition, we have a standard deviation for each of these estimates. Our data are formatted as below:
 
 ```{r}
 betas_raw <- read_csv("../../ignore/harvard_ox_roi.csv")
@@ -32,7 +52,7 @@ betas <- betas_raw %>%
                        stringr::str_sub(roi, end = -5L),
                        stringr::str_sub(roi, end = -3L))) %>%
   spread(statistic, value) %>%
-  # BAND AID!!! but we need ot filter cope_sd > 0. some shit failed
+  # Filter out cope sd's that are 0 -- this would indicate an error in preprocessing
   filter(cope_sd > 0, wave == 1) %>%
   group_by(Subject) %>%
   nest() %>%
@@ -45,6 +65,7 @@ betas <- betas_raw %>%
   mutate(cope_mean_scaled = cope_mean / sd(cope_mean),
          cope_sd_scaled = cope_sd / sd(cope_mean))
 
+head(betas)
 ```
 
 ```{r}
@@ -691,5 +712,35 @@ ggplot(betas, aes(x = cope_mean_scaled)) +
 summary(betas)
 ```
 
-## Future directions for neuroscience in general
-Paul
+## Future directions
+
+While rudimentary, our Bayesian multilevel modeling approach to estimating whole-brain activity at the level of ROIs seem promising both with simulated and real data. We believe that this approach may offer an alternative that is more efficient and robust to type M/type S errors when estimating patterns of brain activity. However, several important considerations for application and extension of such models remain. 
+
+### Voxelwise Spatial Autocorelation
+
+
+The mass univariate approach assumes to a degree that all voxels are independent units, but physiological patterns in the brain are known to be spatially autocorrelated. In addition, to decrease voxel-wise noise and increase power, it is standard in many fMRI analyses to employ 'spatial smoothing' across voxels; thus introducing even more spatial autocorrelation [(Worsley, 2005)](https://www.sciencedirect.com/science/article/pii/S1053811905000923). Although the ROI approach we have taken averages across spatial units comprised of many (hundreds or thousands) of voxels, as we plan to extend our model an additional level down to partially pool across all voxels, consideration of this spatial autocorrelation will be crucial. Indeed, even in our calculation of ROI-wise standard deviations, we have ignored this autocorrelation which may bias estimates. Future extensions of these models could make use of several methods for estimating and incorporating spatial autocorrelation, such as CAR models, or perhaps more simply, AR1 priors based on simple distance for voxelwise autocorrelation. 
+
+### Repeated-Measures fMRI Data
+
+Many fMRI studies examine brain activity in individuals across multiple scanning sessions. Our current model just estimates average activity across a sample of individuals assuming ever subject was scanned once, but we plan to adapt the model to accomodate repeated measurements within subjects to be able to estimate effects of interventions or longitudinal change. This would mean adding an additional hierarchical grouping factor in our model for, at the very least, allowing for intercepts to be estimated within-subject but across separate testing sessions. 
+
+### Simulation-Based Power Analysis and Sample Size Calculations for fMRI Studies
+
+As we can use fully-specified versions of our model to simulate data directly from the priors, we can use MCMC iterations as 'datasets' in the future to conduct power analyses --- that is, how large do effects in various ROIs have to be for us to reliably detect them with our model? Or, how large do within-subject or between-subjects differences in activity in an ROI have to be to detect them in a similar model with added regression parameters? Or, given an effect size, how many subjects in the dataset do we need to reliably find it? Such an applicaiton should be fairly straightforward in the future, as we used one iteration here to simulate data. We could either fix hyperparameters, or in a more Bayesian sense, center hyperparameter priors at our hypothesized effect size and draw samples from distributions. 
+
+
+### Fully Bayesian fMRI Inference from Raw Data to Population Estimates
+
+While we have mostly focused on the population-level inferences in this project, there are also substantial aspects of fMRI processing pipeline for getting voxel-level estimates at the subject level that could benefit from Bayesian hierarchical modeling. In particular, because estimates at each voxel at the subject level are estimated predictors in a regression model based on each voxel's timeseries over the course of the scan, multilevel modeling of these timeseries data could help considerably in estimating activity more precisely for each voxel for each subject. This approach has some significant challenges in tractability however. Such a fully specified model would have at least several parameters for each voxel (and several hundred datapoints in the timeseries per voxel per subject), and with at least several hundred thousand parameters, this model would take an extremely large amount of computational power and time to fit. While this approach seems a valuable one, this presents a significant challenge, so we may have to devise methods of precomuting values for priors and hyperparameters for making this approach more computationally efficient. If possible though, this method of fully Bayesian inference could help substantially in regularizing noisy estimates at the subject level. We hope to continue pursing this possibility especially with the goal of improving the efficiency of fMRI analyses for answering questions in neuroscience and psychology. 
+
+
+# References
+
+Button, K. S., Ioannidis, J. P. A., Mokrysz, C., Nosek, B. A., Flint, J., Robinson, E. S. J., & Munafò, M. R. (2013). Power failure: why small sample size undermines the reliability of neuroscience. Nature Reviews Neuroscience, 14(5), 365–376. https://doi.org/10.1038/nrn3475
+Chen, G., Xiao, Y., Taylor, P. A., Riggins, T., Geng, F., Redcay, E., & Cox, R. W. (2017). Handling Multiplicity in Neuroimaging through Bayesian Lenses with Hierarchical Modeling. BioRxiv, 238998. https://doi.org/10.1101/238998
+Gee, D. G., Humphreys, K. L., Flannery, J., Goff, B., Telzer, E. H., Shapiro, M., … Tottenham, N. (2013). A Developmental Shift from Positive to Negative Connectivity in Human Amygdala–Prefrontal Circuitry. Journal of Neuroscience, 33(10), 4584–4593. https://doi.org/10.1523/JNEUROSCI.3446-12.2013
+Gelman, A., Hill, J., & Yajima, M. (2012). Why We (Usually) Don’t Have to Worry About Multiple Comparisons. Journal of Research on Educational Effectiveness, 5(2), 189–211. https://doi.org/10.1080/19345747.2011.618213
+Genovese, C. R., Lazar, N. A., & Nichols, T. (2002). Thresholding of Statistical Maps in Functional Neuroimaging Using the False Discovery Rate. NeuroImage, 15(4), 870–878. https://doi.org/10.1006/nimg.2001.1037
+Geuter, S., Qi, G., Welsh, R. C., Wager, T. D., & Lindquist, M. A. (2018). Effect Size and Power in fMRI Group Analysis. BioRxiv, 295048. https://doi.org/10.1101/295048
+Worsley, K. J. (2005). Spatial smoothing of autocorrelations to control the degrees of freedom in fMRI analysis. NeuroImage, 26(2), 635–641. https://doi.org/10.1016/j.neuroimage.2005.02.007
