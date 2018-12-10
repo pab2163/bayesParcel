@@ -57,7 +57,7 @@ betas <- subset(betas, !(roi %in% exclude))
 # Model 0: Single normal hyper-distribution
 As a starting point, we chose to model COPE responses in the different ROIs with a model based on the 8-school example. As such, this is a hierarchical model, with each ROI drawn from a population of ROIs with a normal distribution, and each subject drawn from a population of subjects with a normal distribution. Thus, the likelihood in our model is:
 $$COPE_{i} \sim normal(\alpha + \tau_{ROI} * \eta_{ROI[i]} + \tau_{subject} * \eta_{subject[i]}) $$
-With $\alpha$ being a general intercept term, $\eta$s as the ROI- and subject-wise deviations from the general intercept, and $\tau$s as the scaling factor for the deviations.
+With $\alpha$ being a general intercept term, $\eta$s as the ROI- and subject-wise deviations from the general intercept, and $\tau$s as the variation factor for the deviations.
 Following the 8-school model, we chose normal mid-level priors for ROIs and subjects:
 $$\eta_{subject} \sim normal(0,1)$$
 $$\eta_{ROI} \sim normal(0,1)$$
