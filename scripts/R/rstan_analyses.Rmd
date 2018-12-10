@@ -398,51 +398,67 @@ ggplot(eta_rois, aes(x = value)) +
 ### Model 0 summary
 Fitting a hierarchical normal model to the data, with normally distributed deviations for ROIs and subjects, seems like a good first choice for the data. The estimates are stable and interpretable, with observed data plausible given the generative model. However, a  tendency towards rightward skew in the distribution of estimated ROIs, and the comparison of replicates and observed data, prompted us to suspect that the extreme observations could be better modeled. This is in line with the modal theoretical view of imaging experiments: It is expected that regions in the brain should come from separate distributions. Commonly, it is assumed that a group of regions is positively activated by a given task, another group does not show activation, and possibly a third group shows negative values for the contrast of interest.
 
-## Model 1: Finite mixture hyper-distribution
-Monica
+# Model 1: Finite mixture hyper-distribution
+
+We decided that we would implement this theoretically motivated second model as a finite mixture model. In this case, we would assume one mixture component for "non-activated" regions, one mixture component for "negative-activated" regions, and one for "positive-activated" regions. In this way, we would be able to classify regions as activated vs. not based on their estimated probabilities of belonging to each mixture component.
+
+For our first pass of the model, we tried our best to implement it without tailoring too many of the model elements (standard deviations on normal priors, for example) to observed features of the data. This is a little different than the usual strategy of visually exploring data to determine how best to fit a model to said data. We opted to do this to model how this analysis method might be used "in the wild." With most neuroimaging data, data are collected to fit a prescribed data structure (MRI image timeseries should be a certain structure, event markers for different sections of the timeseries should be labeled a certain way, etc), and researchers use a fairly stereotyped analysis pipeline that is robust to individual dataset-level variations. If we were to generalize the model we present here to future analyses, it would need to be completely generative, and thus not have parameters specified based on the data fed into it. If the generative model fits less well to the current dataset, we prefer that if the model can be generalized to future datasets without modification.
+
+We opted to fit a mixture model with three ordered normal components. We constrained the first component to have a negative mean, the second component to have a mean of 0, and the third component to have a positive mean. We set the standard deviations of each of the mixture components to be equal, as we did not have a strong prior reason to believe the mixture components to have different spreads, and thus we wanted to minimize the number of parameters to be estimated.
+
+We specified the $\eta_{ROI}$ and $\eta_{subject}$ parameters similarly to the first, single normal model, but this time we specified $\eta_{ROI}$ as a matrix with $N$ rows, one for each ROI (as before), and with $K$ columns, one for each mixture component (new). Each ROI has one $\eta_{ROI_k}$ value, conditional on the ROI being drawn from mixture component $k$.
+
+We added two new sets of parameters, $\beta$, for the means of each of the mixture components, and $\phi$, for the latent variable indexing the probability that an observation would be drawn from a given mixture component.
+
+### Delete me simulation maybe
+
+```{r}
+tibble(id = 1:2000) %>%
+  mutate(mu_mixture = sample(-1:1, size = n(), replace = TRUE, prob = c(.25, .5, .25)),
+         mu_single = 0,
+         sigma = 0.5) %>%
+  gather(key = "type", value = "mu", starts_with("mu")) %>%
+  mutate(x = rnorm(n(), mean = mu, sd = sigma)) %>%
+  ggplot(aes(x = x, fill = type)) +
+  geom_histogram(position = "identity", alpha = 0.2)
+```
+
+
 ### Stan code
 
 ```{stan, output.var = "model1", results = "hide", message = FALSE, warning = FALSE}
 data {
-  real beta_0; // middle alpha
-  int<lower=0> N;          // number of rois x observations (subjs x waves)
-  int<lower=0> N_roi;
-  int<lower=0> N_subj;
-  real cope[N];               // estimated effects for each observation of roi
-  int<lower=1, upper=N_roi> roi[N]; // ROI ID of each observation
-  int<lower=1, upper=N_subj> subj[N]; // subject ID of each observation
-  real<lower=0> fd[N]; // framewise displacement of each observation, varies by subject x wave
-  real<lower=0> varcope[N];  // s.e. of effect estimates
-}
-transformed data {
-  int<lower=0> N_cell = N_roi * N_subj;
+  real beta_0;                          // middle mixture center
+  int<lower=0> N;                       // number of ROIs x observations (subjs x waves)
+  int<lower=0> N_roi;                   // number of ROIs
+  int<lower=0> N_subj;                  // number of subjects
+  real cope[N];                         // estimated effects for each observation of roi
+  int<lower=1, upper=N_roi> roi[N];     // ROI ID of each observation
+  int<lower=1, upper=N_subj> subj[N];   // subject ID of each observation
+  real<lower=0> varcope[N];             // s.e. of effect estimates
 }
 parameters {
-  // real alpha; // general intercept
-  simplex[3] phi; // mixing phroportions
-  real<upper=0> beta_neg; // center of negative mixture component
-  real<lower=0> beta_pos; // center of positive mixture component
-  real<lower=0> tau_roi;
-  real<lower=0> tau_subj;
+  simplex[3] phi;           // mixing proportions
+  real<upper=0> beta_neg;   // center of negative mixture component
+  real<lower=0> beta_pos;   // center of positive mixture component
+  real<lower=0> tau_roi;    // SD of hyper-distribution of eta_roi
+  real<lower=0> tau_subj;   // SD of hyper-distribution of eta_subj
   matrix[N_roi, 3] eta_roi; // centered parameterization of roi-specific effect estimate
-  vector[N_subj] eta_subj; // centered parameterization of roi-specific effect estimate
+  vector[N_subj] eta_subj;  // centered parameterization of roi-specific effect estimate
 }
 transformed parameters {
-  // hard coding 3 mixture components, shrug
-  vector[3] beta; // all the mixture centers
+  /* hard coding 3 mixture components
+  kind of hacky, but this was the easiest way we figured out */
+  vector[3] beta;
   beta[1] = beta_neg;
   beta[2] = beta_0;
   beta[3] = beta_pos;
 }
 model {
   vector[3] log_phi = log(phi);  // cache log calculation
-
-  // priors make the world go round
-  // alpha ~ normal(0, 1);
   
-  // weakly informative prior for all three betas
+  // weakly informative prior for the two estimated betas
   beta_neg ~ normal(0, 5);
-  beta_0 ~ normal(0, 5);
   beta_pos ~ normal(0, 5);
   
   // wip for taus
@@ -460,183 +476,16 @@ model {
   for (n in 1:N) {
     vector[3] lps = log_phi;
     for (k in 1:3)
-      // lps[k] += normal_lpdf(y[n] | mu[k], sigma[k]); // from 2.10
       lps[k] += normal_lpdf(cope[n] | beta[k] + tau_roi * eta_roi[roi[n], k] + tau_subj * eta_subj[subj[n]], varcope[n]);
     target += log_sum_exp(lps);
   }
-  
-  // This was the old one, leaving here just in case
-  // cope ~ normal(alpha + tau_roi * eta_roi[roi] + tau_subj * eta_subj[subj], varcope);
 }
 generated quantities {
-  // generated thetas, one for each component
+  // generated thetas, one for each mixture component
   matrix[N_roi, 3] theta_roi;
   for (k in 1:3) {
     theta_roi[, k] = beta[k] + tau_roi * eta_roi[, k];
   }
-  
-//  vector [N] rep_cope; // Create data replicates
-
-//  for (i in 1:N)
-//    rep_cope[i] = normal_rng(alpha + tau_roi * eta_roi[roi][i] + tau_subj * eta_subj[subj][i], varcope[i]);
-}
-
-```
-
-```{stan, output.var = "model1.2", results = "hide", message = FALSE, warning = FALSE}
-data {
-  int<lower=1> K; // number of mixture components
-  int<lower=0> N;          // number of rois x observations (subjs x waves)
-  int<lower=0> N_roi;
-  int<lower=0> N_subj;
-  real cope[N];               // estimated effects for each observation of roi
-  int<lower=1, upper=N_roi> roi[N]; // ROI ID of each observation
-  int<lower=1, upper=N_subj> subj[N]; // subject ID of each observation
-  real<lower=0> fd[N]; // framewise displacement of each observation, varies by subject x wave
-  real<lower=0> varcope[N];  // s.e. of effect estimates
-}
-transformed data {
-  int<lower=0> N_cell = N_roi * N_subj;
-}
-parameters {
-  // real alpha; // general intercept
-  simplex[K] phi; // mixing phroportions
-  ordered[K] beta; // centers of mixture components
-  real<lower=0> tau_roi;
-  real<lower=0> tau_subj;
-  matrix[N_roi, K] eta_roi; // centered parameterization of roi-specific effect estimate
-  vector[N_subj] eta_subj; // centered parameterization of roi-specific effect estimate
-}
-model {
-  vector[2] log_phi = log(phi);  // cache log calculation
-
-  // priors make the world go round
-  // alpha ~ normal(0, 1);
-  
-  // weakly informative prior for all betas
-  beta ~ normal(0, 2);
-  
-  // wip for taus
-  tau_roi ~ normal(0, 1);
-  tau_subj ~ normal(0, 1);
-  
-  // wip for etas
-  for (k in 1:K) {
-    eta_roi[, k] ~ normal(0, 1);
-  }
-  
-  eta_subj ~ normal(0, 1);
-  
-  // likelihood stuff
-  for (n in 1:N) {
-    vector[K] lps = log_phi;
-    for (k in 1:K)
-      // lps[k] += normal_lpdf(y[n] | mu[k], sigma[k]); // from 2.10
-      lps[k] += normal_lpdf(cope[n] | beta[k] + tau_roi * eta_roi[roi[n], k] + tau_subj * eta_subj[subj[n]], varcope[n]);
-    target += log_sum_exp(lps);
-  }
-}
-generated quantities {
-  // generated thetas, one for each component
-  matrix[N_roi, K] theta_roi;
-  matrix[N, K] p;
-  
-  for (k in 1:K) {
-    theta_roi[, k] = beta[k] + tau_roi * eta_roi[, k];
-  }
-  
-  for (n in 1:N){
-    vector[K] p_raw;
-    for (k in 1:K){
-      p_raw[k] = phi[k] * exp(normal_log(cope[n], beta[k] + tau_roi * eta_roi[roi[n], k] + tau_subj * eta_subj[subj[n]], varcope[n]));
-    }
-    for (k in 1:K){
-      p[n,k] = p_raw[k]/sum(p_raw);
-    }
-  }
-//  vector [N] rep_cope; // Create data replicates
-
-//  for (i in 1:N)
-//    rep_cope[i] = normal_rng(alpha + tau_roi * eta_roi[roi][i] + tau_subj * eta_subj[subj][i], varcope[i]);
-}
-
-```
-
-```{stan, output.var = "model1.3", results = "hide", message = FALSE, warning = FALSE}
-data {
-  int<lower=1> K; // number of mixture components
-  ordered[K] beta; // centers of mixture components
-  int<lower=0> N;          // number of rois x observations (subjs x waves)
-  int<lower=0> N_roi;
-  int<lower=0> N_subj;
-  real cope[N];               // estimated effects for each observation of roi
-  int<lower=1, upper=N_roi> roi[N]; // ROI ID of each observation
-  int<lower=1, upper=N_subj> subj[N]; // subject ID of each observation
-  real<lower=0> fd[N]; // framewise displacement of each observation, varies by subject x wave
-  real<lower=0> varcope[N];  // s.e. of effect estimates
-}
-transformed data {
-  int<lower=0> N_cell = N_roi * N_subj;
-}
-parameters {
-  // real alpha; // general intercept
-  simplex[K] phi; // mixing phroportions
-  real<lower=0> tau_roi;
-  real<lower=0> tau_subj;
-  matrix[N_roi, K] eta_roi; // centered parameterization of roi-specific effect estimate
-  vector[N_subj] eta_subj; // centered parameterization of roi-specific effect estimate
-}
-model {
-  vector[2] log_phi = log(phi);  // cache log calculation
-
-  // priors make the world go round
-  // alpha ~ normal(0, 1);
-  
-  // rather informative prior for all betas
-  beta ~ normal(0, 1);
-  
-  // wip for taus
-  tau_roi ~ normal(0, 1);
-  tau_subj ~ normal(0, 1);
-  
-  // wip for etas
-  for (k in 1:K) {
-    eta_roi[, k] ~ normal(0, 1);
-  }
-  
-  eta_subj ~ normal(0, 1);
-  
-  // likelihood stuff
-  for (n in 1:N) {
-    vector[K] lps = log_phi;
-    for (k in 1:K)
-      // lps[k] += normal_lpdf(y[n] | mu[k], sigma[k]); // from 2.10
-      lps[k] += normal_lpdf(cope[n] | beta[k] + tau_roi * eta_roi[roi[n], k] + tau_subj * eta_subj[subj[n]], varcope[n]);
-    target += log_sum_exp(lps);
-  }
-}
-generated quantities {
-  // generated thetas, one for each component
-  matrix[N_roi, K] theta_roi;
-  matrix[N, K] p;
-  
-  for (k in 1:K) {
-    theta_roi[, k] = beta[k] + tau_roi * eta_roi[, k];
-  }
-  
-  for (n in 1:N){
-    vector[K] p_raw;
-    for (k in 1:K){
-      p_raw[k] = phi[k] * exp(normal_log(cope[n], beta[k] + tau_roi * eta_roi[roi[n], k] + tau_subj * eta_subj[subj[n]], varcope[n]));
-    }
-    for (k in 1:K){
-      p[n,k] = p_raw[k]/sum(p_raw);
-    }
-  }
-//  vector [N] rep_cope; // Create data replicates
-
-//  for (i in 1:N)
-//    rep_cope[i] = normal_rng(alpha + tau_roi * eta_roi[roi][i] + tau_subj * eta_subj[subj][i], varcope[i]);
 }
 
 ```
@@ -674,10 +523,119 @@ fit1.3 <- sampling(model1.3,
                  control = list(max_treedepth = 15))
 ```
 
+Inspecting the estimates for $\phi$ and $\beta$ reveals that the mixture model does not actually add any new information. $\phi_3$, the probability for the third (positive) mixture component, is functionally 1, while $\phi_1$ and $\phi_2$ are functionally 0. $\beta_3$ is estimated at about the mean of the observed data, while the other two mixture centers are estimated at 0--$\beta_2$ because we fixed it at 0, and $\beta_1$ presumably because it's centered at the mean value of the prior, and there are no data points that would pull the posterior estimate below 0.
+
+
+```{stan, output.var = "model1.2", results = "hide", message = F, warning = F, eval = F}
+data {
+  int<lower=1> K;                       // number of mixture components
+  int<lower=0> N;                       // number of ROIs x observations (subjs x waves)
+  int<lower=0> N_roi;                   // number of ROIs
+  int<lower=0> N_subj;                  // number of subjects
+  real cope[N];                         // estimated effects for each observation of roi
+  int<lower=1, upper=N_roi> roi[N];     // ROI ID of each observation
+  int<lower=1, upper=N_subj> subj[N];   // subject ID of each observation
+  real<lower=0> varcope[N];             // s.e. of effect estimates
+}
+transformed data {
+  int<lower=0> N_cell = N_roi * N_subj;
+}
+parameters {
+  simplex[K] phi;           // mixing proportions
+  ordered[K] beta;          // centers of mixture components
+  real<lower=0> tau_roi;    // SD of hyper-distribution of eta_roi
+  real<lower=0> tau_subj;   // SD of hyper-distribution of eta_subj
+  matrix[N_roi, K] eta_roi; // centered parameterization of roi-specific effect estimate
+  vector[N_subj] eta_subj;  // centered parameterization of roi-specific effect estimate
+}
+model {
+  vector[2] log_phi = log(phi);  // cache log calculation
+  
+  // weakly informative prior for all betas
+  beta ~ normal(0, 2);
+  
+  // weakly informative prior for taus
+  tau_roi ~ normal(0, 1);
+  tau_subj ~ normal(0, 1);
+  
+  // weakly informative prior for etas
+  for (k in 1:K) {
+    eta_roi[, k] ~ normal(0, 1);
+  }
+  
+  eta_subj ~ normal(0, 1);
+  
+  // likelihood stuff
+  for (n in 1:N) {
+    vector[K] lps = log_phi;
+    for (k in 1:K)
+      lps[k] += normal_lpdf(cope[n] | beta[k] + tau_roi * eta_roi[roi[n], k] + tau_subj * eta_subj[subj[n]], varcope[n]);
+    target += log_sum_exp(lps);
+  }
+}
+
+```
+
+```{stan, output.var = "model1.3", results = "hide", message = F, warning = F eval = F}
+data {
+  int<lower=1> K;                       // number of mixture components
+  ordered[K] beta;                      // centers of mixture components
+  int<lower=0> N;                       // number of ROIs x observations (subjs x waves)
+  int<lower=0> N_roi;                   // number of ROIs
+  int<lower=0> N_subj;                  // number of subjects
+  real cope[N];                         // estimated effects for each observation of roi
+  int<lower=1, upper=N_roi> roi[N];     // ROI ID of each observation
+  int<lower=1, upper=N_subj> subj[N];   // subject ID of each observation
+  real<lower=0> varcope[N];             // s.e. of effect estimates
+}
+parameters {
+  simplex[K] phi;           // mixing proportions
+  real<lower=0> tau_roi;    // SD of hyper-distribution of eta_roi
+  real<lower=0> tau_subj;   // SD of hyper-distribution of eta_subj
+  matrix[N_roi, K] eta_roi; // centered parameterization of roi-specific effect estimate
+  vector[N_subj] eta_subj;  // centered parameterization of roi-specific effect estimate
+}
+model {
+  vector[2] log_phi = log(phi);  // cache log calculation
+  
+  // rather informative prior for all betas
+  beta ~ normal(0, 1);
+  
+  // weakly informative prior for taus
+  tau_roi ~ normal(0, 1);
+  tau_subj ~ normal(0, 1);
+  
+  // weakly informative prior for etas
+  for (k in 1:K) {
+    eta_roi[, k] ~ normal(0, 1);
+  }
+  
+  eta_subj ~ normal(0, 1);
+  
+  // likelihood stuff
+  for (n in 1:N) {
+    vector[K] lps = log_phi;
+    for (k in 1:K)
+      lps[k] += normal_lpdf(cope[n] | beta[k] + tau_roi * eta_roi[roi[n], k] + tau_subj * eta_subj[subj[n]], varcope[n]);
+    target += log_sum_exp(lps);
+  }
+}
+
+```
+
+## Attempts to refine model
+
+We opted not to spend time running posterior predictive checks or other model evaluation on the first iteration of our mixture model, as we could tell immediately from checking the mixture parameter estimates that Stan had estimated our model as having essentially only one component.
+
+We tried modifying the mixture model to remedy the non-mixture-estimation issue in the following ways. Stan code printed for transparency, but model outputs hidden for clarity, as we found that all of the modified models continued suffering from the problem of having one mixture component with $\phi \approx 1$ and the rest with $\phi \approx 0$.
+
+First, we cut the number of mixture components down to two, as we observed in the original single normal hierarchical model that there were hardly any ROIs for which $\eta_{ROI}$ was "deactivated", or much below 0. This way, we should only be estimating the "non-activated" and the "positive-activated" mixture components. We also stopped hard-coding the number of components, or the location of any of the components, in this model.
+
+
 ### Plots?
 
 Temporarily need to reload model object when done separately
-```{r}
+```{r, echo = FALSE, eval = FALSE}
 load('fit_model0.rda')
 
 ## Redundant bit
