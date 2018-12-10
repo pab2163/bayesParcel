@@ -127,7 +127,7 @@ generated quantities {
 }
 ```
 ## Fake data simulation
-Before fitting the model to the data, we'll begin by evaluating the model's potency in recovering known parameters. We used Stan to simulate data given parameters drawn from the priors in our model. We then fit the simulated data, and checked the resultant posterior intervals against the know values of the parameters. 
+Before fitting the model to the data, we'll begin by evaluating the model's potency in recovering known parameters. We used Stan to simulate data given parameters drawn from the priors in our model. We then fit the simulated data, and checked the resultant posterior intervals against the known values of the parameters. 
 ```{stan, output.var = "model0_fake", results = "hide", message = FALSE, warning = FALSE}
 data {
   int<lower=0> N;          // number of rois x observations (subjs x waves)
