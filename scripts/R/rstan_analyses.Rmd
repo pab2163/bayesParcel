@@ -315,6 +315,23 @@ theta_rois %>%
 
 ### Brain plots
 
+Here, we plot our posterior estimated betas for each ROI at the group level back onto the brain to see whether the results look reasonable. We can check the results of these betas from this model against a massively univariate model just as sanity check -- are our models demonstrating similar patterns as standard fMRI processing software [(FSL)](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki)
+
+Let's first look at the posterior mean for each ROI, as well as 2.5% and 97.5% quantiles of the posterior. 
+
+![](../../brainPlots/lwrMod0.pdf)
+![](../../brainPlots/meanMod0.pdf)
+![](../../brainPlots/uprMod0.pdf)
+
+This looks sensible! We are seeing the highest estimates mostly in the occipital lobe at primary visual cortex where early visual processing is thought to take place. That makes sense. Interestingly, in this task contrast (fearful faces over basline), almost all regiong of the brain seem to be estimated as being positively, rather than negatively active. This makes some sense, as we'd expect most brain regions to be positively activated by a task over baseline (we would see more negative patterns probability if we contrasted one task versus another). 
+
+Let's compare it to the univarite map, which plots a T-statistic for activity for every voxel. 
+
+![](../../brainPlots/univariateTMap.pdf)
+
+This looks fairly similar, so that's good! We see the same pattern of highest activity in the primary visual cortex and similar patterns in general across the rest of the brain. One interesting difference is that we some negative estimates in the mass univariate approach, particularly in the prefrontal cortex, that don't show up in our model. This could be becuase our model is pooling the most negative estimates more positively -- the areas that show up as negative in the mass univariate map do seem to correspond with more negatively estimated areas in our model. Then, the question would be whether this pooling is appropriate? In one attempt to address this question of whether we were estimating all regions too positively (and therefore needing to allow some to be negative), we decided to try out the mixture model approach to categorize some ROIs as negative. 
+
+
 ### Posterior predictive checks
 To further evaluate the adequacy of the hierarchical normal model to the data, we performed posterior predictive checks. For each posterior draw, simulated data were generated with the same model likelihood, given the drawn parameters. These posterior replicates allow us to plot the interval of expected new observations, given our model and the observed data. Comparing our observed data to the predictive interval informs us about the adequacy of the chosen model.
 As can be seen of in the plots of replicates and observed data below, the observed data all fall withing the 95% interval of replicates. Thus, the data are plausible given the generative model. A drawback highlighted by this test, is that the median replicates are do not follow the observed data well at the extreme tails of the distribution: that is, the observed data seems to have consistently heavier tails than than the replicate data.
