@@ -432,20 +432,6 @@ We specified the $\eta_{ROI}$ and $\eta_{subject}$ parameters similarly to the f
 
 We added two new sets of parameters, $\beta$, for the means of each of the mixture components, and $\phi$, for the latent variable indexing the probability that an observation would be drawn from a given mixture component.
 
-### Delete me simulation maybe
-
-```{r}
-tibble(id = 1:2000) %>%
-  mutate(mu_mixture = sample(-1:1, size = n(), replace = TRUE, prob = c(.25, .5, .25)),
-         mu_single = 0,
-         sigma = 0.5) %>%
-  gather(key = "type", value = "mu", starts_with("mu")) %>%
-  mutate(x = rnorm(n(), mean = mu, sd = sigma)) %>%
-  ggplot(aes(x = x, fill = type)) +
-  geom_histogram(position = "identity", alpha = 0.2)
-```
-
-
 ### Stan code
 
 ```{stan, output.var = "model1", results = "hide", message = FALSE, warning = FALSE}
@@ -547,6 +533,13 @@ fit1.3 <- sampling(model1.3,
 
 Inspecting the estimates for $\phi$ and $\beta$ reveals that the mixture model does not actually add any new information. $\phi_3$, the probability for the third (positive) mixture component, is functionally 1, while $\phi_1$ and $\phi_2$ are functionally 0. $\beta_3$ is estimated at about the mean of the observed data, while the other two mixture centers are estimated at 0--$\beta_2$ because we fixed it at 0, and $\beta_1$ presumably because it's centered at the mean value of the prior, and there are no data points that would pull the posterior estimate below 0.
 
+## Attempts to refine model
+
+We opted not to spend time running posterior predictive checks or other model evaluation on the first iteration of our mixture model, as we could tell immediately from checking the mixture parameter estimates that Stan had estimated our model as having essentially only one component.
+
+We tried modifying the mixture model to remedy the non-mixture-estimation issue in the following ways. Stan code printed for transparency, but model outputs hidden for clarity, as we found that all of the modified models continued suffering from the problem of having one mixture component with $\phi \approx 1$ and the rest with $\phi \approx 0$.
+
+First, we cut the number of mixture components down to two, as we observed in the original single normal hierarchical model that there were hardly any ROIs for which $\eta_{ROI}$ was "deactivated", or much below 0. This way, we should only be estimating the "non-activated" and the "positive-activated" mixture components. We also stopped hard-coding the number of components, or the location of any of the components, in this model.
 
 ```{stan, output.var = "model1.2", results = "hide", message = F, warning = F, eval = F}
 data {
@@ -598,6 +591,10 @@ model {
 
 ```
 
+Once again, one of the mixture $\beta$ values was estimated at the grand mean of the data with $\phi \approx 1$, and the other $\beta$ was estimated at 0 (the center of the prior) with $\phi \approx 0$.
+
+As a final attempt, we estimated a model where the mixture centers were not estimated as free parameters, but instead were fed into the model as data, so that we could manually specify the "expected" mixture centers.
+
 ```{stan, output.var = "model1.3", results = "hide", message = F, warning = F eval = F}
 data {
   int<lower=1> K;                       // number of mixture components
@@ -645,19 +642,16 @@ model {
 
 ```
 
-## Attempts to refine model
+We specified $\beta[2] = [0.3, 1]$, such that they should correspond to the "non-activated" and "positive-activated" mixture components respectively. The $\eta_{ROI}$ values from the original single normal model showed a grand mean around 0.3, with a few ROIs having a higher $\eta_{ROI}$ closer to 1, so we tried to equip the model to detect mixture components centered where the data might be centered.
 
-We opted not to spend time running posterior predictive checks or other model evaluation on the first iteration of our mixture model, as we could tell immediately from checking the mixture parameter estimates that Stan had estimated our model as having essentially only one component.
+Once more, $\phi_1 \approx 1$, for the "non-activated" component, while $\phi_2 \approx 0$ for the "positive-activated" component.
 
-We tried modifying the mixture model to remedy the non-mixture-estimation issue in the following ways. Stan code printed for transparency, but model outputs hidden for clarity, as we found that all of the modified models continued suffering from the problem of having one mixture component with $\phi \approx 1$ and the rest with $\phi \approx 0$.
+## Model 1 summary
 
-First, we cut the number of mixture components down to two, as we observed in the original single normal hierarchical model that there were hardly any ROIs for which $\eta_{ROI}$ was "deactivated", or much below 0. This way, we should only be estimating the "non-activated" and the "positive-activated" mixture components. We also stopped hard-coding the number of components, or the location of any of the components, in this model.
+Ultimately, our mixture model extension failed to yield any insights beyond those of the single normal model. All models we attempted to fit estimated that 100% of our observations came from the same mixture component, suggesting that our data were not consistent with a mixture model after all.
 
-
-### Plots?
-
-Temporarily need to reload model object when done separately
-```{r, echo = FALSE, eval = FALSE}
+```{r yanivs mystery chunk, echo = FALSE, eval = FALSE}
+# Temporarily need to reload model object when done separately
 load('fit_model0.rda')
 
 ## Redundant bit
@@ -699,17 +693,54 @@ write.csv(theta_rois, file = '../../estimates/spreadsheets/mod0.csv', row.names 
 
 # Discussion
 
-## Why we trashed the mixture models
+## Limitations, aka why we trashed the mixture models
+
+We created our mixture model as independent of the actual features of the data as possible, in the hopes that if our hypothesis about the data-generating process were close to reality, we should see improved model fit by our a priori model specification alone. Ultimately, our data were not consistent enough with a mixture model for us to estimate any mixture-specific parameters.
+
+Upon reflection and visual inspection, the data are not consistent with an obvious mixture process.
+
+```{r}
+betas %>%
+  select(`scaled COPE mean` = cope_mean_scaled, `scaled COPE SD` = cope_sd_scaled) %>%
+  gather(key = "param", value = "value") %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 30) +
+  geom_vline(xintercept = 0, linetype = 3) +
+  facet_wrap(~ param, scales = "free_x") +
+  labs(title = "Histograms of individual COPE means and SDs",
+       subtitle = "Median of means ~ 0, median of SDs ~ 1")
+```
+
+We can see now that even the estimates that might come from ROIs with $\eta_{ROI} \approx 1$ still have observation-level SDs that are probably close to or above 1. If the distance between mixture components is 1 standard deviation, _and_ there are very few observations coming from one of the mixture components, the empirical distribution of the data probably looks very much like it comes from a single component model.
+
 ```{r}
 betas %>%
   ggplot(aes(x = roi_num, y = cope_mean_scaled)) +
   geom_errorbar(aes(ymin = cope_mean_scaled - cope_sd_scaled, ymax = cope_mean_scaled + cope_sd_scaled), width = 0, alpha = 0.3) +
   geom_point(alpha = 0.3)
 
-ggplot(betas, aes(x = cope_mean_scaled)) +
-  geom_histogram(binwidth=.2)
-
 summary(betas)
+```
+
+```{r}
+betas %>%
+  ggplot(aes(x = cope_mean_scaled, y = cope_sd_scaled)) +
+  geom_point(color = "grey40", alpha = 0.1) +
+  geom_hline(yintercept = median(betas$cope_sd_scaled), linetype = 3) +
+  geom_vline(xintercept = median(betas$cope_mean_scaled), linetype = 3)
+```
+
+The median observation-level variance 
+
+```{r}
+tibble(id = 1:2000) %>%
+  mutate(mu_mixture = sample(-1:1, size = n(), replace = TRUE, prob = c(.25, .5, .25)),
+         mu_single = 0,
+         sigma = 0.5) %>%
+  gather(key = "type", value = "mu", starts_with("mu")) %>%
+  mutate(x = rnorm(n(), mean = mu, sd = sigma)) %>%
+  ggplot(aes(x = x, fill = type)) +
+  geom_histogram(position = "identity", alpha = 0.2)
 ```
 
 ## Future directions
