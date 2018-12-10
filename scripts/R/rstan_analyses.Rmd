@@ -498,38 +498,12 @@ generated quantities {
 
 ```
 
-```{r, eval = FALSE}
-fit1.2 <- sampling(model1.2,
-                 data = betas %$%
-                   list(K = 2L,
-                        N = nrow(.),
-                        N_roi = max(roi_num),
-                        N_subj = max(subject_num),
-                        cope = cope_mean_scaled,
-                        roi = roi_num,
-                        subj = subject_num,
-                        fd = meanFD_included_trs,
-                        varcope = cope_sd_scaled),
-                 iter = 200,
-                 control = list(max_treedepth = 15))
+```{r}
+load("../../ignore/fit_model1.rda")
+
+print(fit1, pars = c("phi", "beta"))
 ```
 
-```{r, eval = FALSE}
-fit1.3 <- sampling(model1.3,
-                 data = betas %$%
-                   list(K = 2L,
-                        beta = c(0.3, 1),
-                        N = nrow(.),
-                        N_roi = max(roi_num),
-                        N_subj = max(subject_num),
-                        cope = cope_mean_scaled,
-                        roi = roi_num,
-                        subj = subject_num,
-                        fd = meanFD_included_trs,
-                        varcope = cope_sd_scaled),
-                 iter = 200,
-                 control = list(max_treedepth = 15))
-```
 
 Inspecting the estimates for $\phi$ and $\beta$ reveals that the mixture model does not actually add any new information. $\phi_3$, the probability for the third (positive) mixture component, is functionally 1, while $\phi_1$ and $\phi_2$ are functionally 0. $\beta_3$ is estimated at about the mean of the observed data, while the other two mixture centers are estimated at 0--$\beta_2$ because we fixed it at 0, and $\beta_1$ presumably because it's centered at the mean value of the prior, and there are no data points that would pull the posterior estimate below 0.
 
@@ -595,7 +569,7 @@ Once again, one of the mixture $\beta$ values was estimated at the grand mean of
 
 As a final attempt, we estimated a model where the mixture centers were not estimated as free parameters, but instead were fed into the model as data, so that we could manually specify the "expected" mixture centers.
 
-```{stan, output.var = "model1.3", results = "hide", message = F, warning = F eval = F}
+```{stan, output.var = "model1.3", results = "hide", message = F, warning = F, eval = F}
 data {
   int<lower=1> K;                       // number of mixture components
   ordered[K] beta;                      // centers of mixture components
@@ -715,32 +689,38 @@ We can see now that even the estimates that might come from ROIs with $\eta_{ROI
 
 ```{r}
 betas %>%
-  ggplot(aes(x = roi_num, y = cope_mean_scaled)) +
-  geom_errorbar(aes(ymin = cope_mean_scaled - cope_sd_scaled, ymax = cope_mean_scaled + cope_sd_scaled), width = 0, alpha = 0.3) +
-  geom_point(alpha = 0.3)
-
-summary(betas)
-```
-
-```{r}
-betas %>%
   ggplot(aes(x = cope_mean_scaled, y = cope_sd_scaled)) +
   geom_point(color = "grey40", alpha = 0.1) +
   geom_hline(yintercept = median(betas$cope_sd_scaled), linetype = 3) +
   geom_vline(xintercept = median(betas$cope_mean_scaled), linetype = 3)
 ```
 
-The median observation-level variance 
+```{r}
+betas %>%
+  ggplot(aes(x = roi_num, y = cope_mean_scaled)) +
+  geom_errorbar(aes(ymin = cope_mean_scaled - cope_sd_scaled, ymax = cope_mean_scaled + cope_sd_scaled), width = 0, alpha = 0.3) +
+  geom_point(alpha = 0.3)
+```
+
+This still doesn't necessarily rule out that the data come from a mixture process, especially if that mixture process really does have one mixture component that generates most of the observations.
+
+How much mass has to be in each component of a mixture process for observed data to look noticeably unlike a single component process? We can do a quick simulation to visualize. For simplicity, we'll assume a symmetrical three-component mixture process, with normal centers at -1, 0, and 1, SD of 1 for all components, and equal probability of data coming from either of the outer components.
 
 ```{r}
-tibble(id = 1:2000) %>%
-  mutate(mu_mixture = sample(-1:1, size = n(), replace = TRUE, prob = c(.25, .5, .25)),
-         mu_single = 0,
-         sigma = 0.5) %>%
+crossing(id = 1:2000,
+         sigma = c(0.25, 0.5, 1)) %>%
+  mutate(mu_mixture_1 = sample(-1:1, size = n(), replace = TRUE, prob = c(.25, .5, .25)),
+         mu_mixture_2 = sample(-1:1, size = n(), replace = TRUE, prob = c(.1, .8, .1)),
+         mu_mixture_3 = sample(-1:1, size = n(), replace = TRUE, prob = c(.05, .9, .05)),
+         mu_mixture_4 = sample(-1:1, size = n(), replace = TRUE, prob = c(.01, .98, .01)),
+         mu_single = 0) %>%
   gather(key = "type", value = "mu", starts_with("mu")) %>%
-  mutate(x = rnorm(n(), mean = mu, sd = sigma)) %>%
-  ggplot(aes(x = x, fill = type)) +
-  geom_histogram(position = "identity", alpha = 0.2)
+  mutate(x = rnorm(n(), mean = mu, sd = sigma),
+         sigma = paste0("component SD = ", sigma)) %>%
+  ggplot(aes(x = x, fill = type, color = type)) +
+  # geom_histogram(position = "identity", alpha = 0.2) +
+  geom_density(alpha = 0.2) +
+  facet_wrap(~ sigma, scales = "free_y")
 ```
 
 ## Future directions
