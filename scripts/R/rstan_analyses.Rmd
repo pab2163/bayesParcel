@@ -44,7 +44,7 @@ For this example, we test our model on an emotional face categorization task sca
 
 Similarly to the 8 schools example, we have a single estimate for fearful faces for each ROI for each subject. In addition, we have a standard deviation for each of these estimates. Our data are formatted as below:
 
-```{r}
+```{r, message = F, warning = F}
 betas_raw <- read_csv("../../ignore/harvard_ox_roi.csv")
 
 # nonsense ROIs for excluding from analysis
@@ -180,7 +180,14 @@ fake_data0 <- as.data.table(fake_data0)
 fake_params0 <- fake_data0[, !grepl('cope', colnames(fake_data0)), with = F]
 fake_data0 <- fake_data0[, grepl('cope', colnames(fake_data0)), with = F]
 fake_data0 <- melt(fake_data0, measure.vars = colnames(fake_data0))
+
+save(fake_data0, fake_params0, file = "../../ignore/fake_data0.rda")
 ```
+
+```{r echo = F}
+load("../../ignore/fake_data0.rda")
+```
+
 
 ``` {r, eval = F}
 # Fit fake data
@@ -198,11 +205,11 @@ fake_fit0 <- sampling(model0,
 save(fake_fit0, file = "../../ignore/fake_fit0.rda")
 ```
 
-```{r, echo = F, eval = F}
+```{r, echo = F}
 load("../../ignore/fake_fit0.rda")
 ```
 
-```{r, eval = F}
+```{r}
 # Check parameter recovery
 fake_fit0 <- as.data.table(fake_fit0)
 fake_fit0 <- melt(fake_fit0, measure.vars = colnames(fake_fit0)) 
@@ -342,7 +349,7 @@ This looks fairly similar, so that's good! We see the same pattern of highest ac
 ### Posterior predictive checks
 To further evaluate the adequacy of the hierarchical normal model to the data, we performed posterior predictive checks. For each posterior draw, simulated data were generated with the same model likelihood, given the drawn parameters. These posterior replicates allow us to plot the interval of expected new observations, given our model and the observed data. Comparing our observed data to the predictive interval informs us about the adequacy of the chosen model.
 As can be seen of in the plots of replicates and observed data below, the observed data all fall withing the 95% interval of replicates. Thus, the data are plausible given the generative model. A drawback highlighted by this test, is that the median replicates are do not follow the observed data well at the extreme tails of the distribution: that is, the observed data seems to have consistently heavier tails than than the replicate data.
-```{r, eval = F}
+```{r}
 # Plot data replicates
 # Implemented with data.table. Sorry. Open to the possibility of recoding with tidyverse, just not right now
 df_fit0 <- as.data.table(fit0)
@@ -400,7 +407,7 @@ ggplot(df_subs, aes(x = xplot, y = median)) +
 
 ```
 The heavier tails in the observed data indicated that our mid-level priors might not be the best fit for the data. Hence, we compared the estimated draws for the ROI and subject deviations from the mean COPE to the normal prior we assigned them. The plots below reveal that overall, the estimated deviations conform to the shape of the normal prior. However, when inspecting the plots for the ROIs, they seem to have a rightward skew and a heavier right tail that is not consistent with a normal prior.
-```{r, eval = F}
+```{r}
 # Compare thetas to priors
 df_fit0 <- as.data.table(fit0)
 vars <- colnames(df_fit0)
