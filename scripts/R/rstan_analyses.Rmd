@@ -333,6 +333,8 @@ Here, we plot our posterior estimated betas for each ROI at the group level back
 
 Let's first look at the posterior mean for each ROI, as well as 2.5% and 97.5% quantiles of the posterior. 
 
+\pagebreak
+
 ![](../../brainPlots/lwrMod0.pdf)
 ![](../../brainPlots/meanMod0.pdf)
 ![](../../brainPlots/uprMod0.pdf)
