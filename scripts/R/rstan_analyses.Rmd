@@ -35,7 +35,7 @@ Crucial to our models are the hyperparameters for the distributions from which d
 Below, we demonstrate both models, and address their efficacy on both simulated and real data. 
 
 
-## Loading real data
+## Dataset for this case study
 
 For this example, we test our model on an emotional face categorization task scanned using fMRI on a group of healthy devloping children. In the task, participants are shown different emotional faces and asked to press buttons to categorize which emotion they are seeing (neutral versus fearful faces). For our purposes, we focuse on estimating the activity in the brain associated with viewing the fearful faces above the 'baseline' of a fixation cross on the screen. For more information on this task, see [(Gee et al., 2013)](https://www.ncbi.nlm.nih.gov/pubmed/23467374)
 
