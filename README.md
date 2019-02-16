@@ -2,6 +2,8 @@
 
 A project estimating fMRI group-level results through Bayesian hierarchical modeling with whole-brain parcellations as observational units
 
+Authors: [Yaniv Abir](https://github.com/yanivabir),[Paul A. Bloom](https://github.com/pab2163), & [Monica Thieu](https://github.com/monicathieu)
+
 ![Posterior Mean Estimate](brainPlots/posteriorPlot.png)
 
 ## Project Summary
@@ -17,3 +19,4 @@ Inspired by ideas from a recent preprint [(Chen et al., 2018)](https://www.biorx
 ## Future Directions
 
 The repository and write-up as it currently stands is more of a proof of concept than a functional prototpye of this approach. We hope to extend the materials here into a more cohesive and scalable set of tools for using Bayesian Hierarchical Modeling for group-level fMRI analysis. 
+
