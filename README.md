@@ -14,9 +14,9 @@ Inspired by ideas from a recent preprint [(Chen et al., 2018)](https://www.biorx
 
 *	Markdown documenting the project and a case study analysis can be found [here](scripts/R/)
 *	Jupyter Notebooks with brain image preproc can be found [here](scripts/jupyterNotebooks)
-*	Stan models can be found here
+*	Stan models can be found [here](scripts/stan/)
 
 ## Future Directions
 
-The repository and write-up as it currently stands is more of a proof of concept than a functional prototpye of this approach. We hope to extend the materials here into a more cohesive and scalable set of tools for using Bayesian Hierarchical Modeling for group-level fMRI analysis. 
+The repository and write-up, as they currently stand, are more of a proof of concept than a functional prototype of this approach. In the longer term, we hope to extend the materials here into a more cohesive and scalable set of tools for using Bayesian Hierarchical Modeling for group-level fMRI analysis. 
 
